@@ -67,6 +67,7 @@ func ProvideAuthService(
 	tencentCaptchaService *TencentCaptchaService,
 	aliyunCaptchaService *AliyunCaptchaService,
 	emailQueueService *EmailQueueService,
+	emailOTPCache EmailOTPCache,
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
@@ -90,6 +91,7 @@ func ProvideAuthService(
 	)
 	svc.SetTencentCaptchaService(tencentCaptchaService)
 	svc.SetAliyunCaptchaService(aliyunCaptchaService)
+	svc.emailOTPCache = emailOTPCache
 	if mcpOAuthService != nil {
 		svc.SetMCPGrantRevoker(mcpOAuthService)
 	}

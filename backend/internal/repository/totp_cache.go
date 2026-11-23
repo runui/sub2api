@@ -71,7 +71,7 @@ func (c *TotpCache) DeleteSetupSession(ctx context.Context, userID int64) error 
 
 // GetLoginSession retrieves a TOTP login session
 func (c *TotpCache) GetLoginSession(ctx context.Context, tempToken string) (*service.TotpLoginSession, error) {
-	key := totpLoginKeyPrefix + tempToken
+	key := totpLoginKey(tempToken)
 	data, err := c.rdb.Get(ctx, key).Bytes()
 	if err != nil {
 		if err == redis.Nil {
@@ -90,7 +90,7 @@ func (c *TotpCache) GetLoginSession(ctx context.Context, tempToken string) (*ser
 
 // SetLoginSession stores a TOTP login session
 func (c *TotpCache) SetLoginSession(ctx context.Context, tempToken string, session *service.TotpLoginSession, ttl time.Duration) error {
-	key := totpLoginKeyPrefix + tempToken
+	key := totpLoginKey(tempToken)
 	data, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("marshal login session: %w", err)
@@ -105,8 +105,23 @@ func (c *TotpCache) SetLoginSession(ctx context.Context, tempToken string, sessi
 
 // DeleteLoginSession deletes a TOTP login session
 func (c *TotpCache) DeleteLoginSession(ctx context.Context, tempToken string) error {
-	key := totpLoginKeyPrefix + tempToken
+	key := totpLoginKey(tempToken)
 	return c.rdb.Del(ctx, key).Err()
+}
+
+// ConsumeLoginSession lets only one successful verifier claim a pending session.
+func (c *TotpCache) ConsumeLoginSession(ctx context.Context, tempToken string) (bool, error) {
+	deleted, err := c.rdb.Del(ctx, totpLoginKey(tempToken)).Result()
+	return deleted == 1, err
+}
+
+func totpLoginKey(tempToken string) string {
+	if service.IsEmailOTPTotpToken(tempToken) {
+		// Old servers must not complete these sessions as password logins during
+		// a rolling upgrade: they cannot recheck the email-OTP policy or proof.
+		return "auth:email-otp:totp:" + emailOTPKeyDigest(tempToken)
+	}
+	return totpLoginKeyPrefix + tempToken
 }
 
 // IncrementVerifyAttempts increments the verify attempt counter

@@ -66,6 +66,7 @@ type TotpLoginSession struct {
 	Email            string
 	TokenExpiry      time.Time
 	PendingOAuthBind *PendingOAuthBindLoginSession `json:"pending_oauth_bind,omitempty"`
+	EmailOTP         *EmailOTPTotpLogin            `json:"email_otp,omitempty"`
 }
 
 type PendingOAuthBindLoginSession struct {
@@ -422,7 +423,7 @@ func (s *TotpService) HasStepUpGrant(ctx context.Context, userID int64, sessionK
 
 // CreateLoginSession creates a temporary login session for 2FA
 func (s *TotpService) CreateLoginSession(ctx context.Context, userID int64, email string) (string, error) {
-	return s.createLoginSession(ctx, userID, email, nil)
+	return s.createLoginSession(ctx, &TotpLoginSession{UserID: userID, Email: email})
 }
 
 // CreatePendingOAuthBindLoginSession creates a temporary 2FA session that will
@@ -434,30 +435,27 @@ func (s *TotpService) CreatePendingOAuthBindLoginSession(
 	pendingSessionToken string,
 	browserSessionKey string,
 ) (string, error) {
-	return s.createLoginSession(ctx, userID, email, &PendingOAuthBindLoginSession{
-		PendingSessionToken: pendingSessionToken,
-		BrowserSessionKey:   browserSessionKey,
+	return s.createLoginSession(ctx, &TotpLoginSession{
+		UserID: userID,
+		Email:  email,
+		PendingOAuthBind: &PendingOAuthBindLoginSession{
+			PendingSessionToken: pendingSessionToken,
+			BrowserSessionKey:   browserSessionKey,
+		},
 	})
 }
 
-func (s *TotpService) createLoginSession(
-	ctx context.Context,
-	userID int64,
-	email string,
-	pendingOAuthBind *PendingOAuthBindLoginSession,
-) (string, error) {
+func (s *TotpService) createLoginSession(ctx context.Context, session *TotpLoginSession) (string, error) {
 	// Generate a random temp token
 	tempToken, err := generateRandomToken(32)
 	if err != nil {
 		return "", fmt.Errorf("generate temp token: %w", err)
 	}
-
-	session := &TotpLoginSession{
-		UserID:           userID,
-		Email:            email,
-		TokenExpiry:      time.Now().Add(totpLoginTTL),
-		PendingOAuthBind: pendingOAuthBind,
+	if session.EmailOTP != nil {
+		tempToken = emailOTPTotpTokenPrefix + tempToken
 	}
+
+	session.TokenExpiry = time.Now().Add(totpLoginTTL)
 
 	if err := s.cache.SetLoginSession(ctx, tempToken, session, totpLoginTTL); err != nil {
 		return "", fmt.Errorf("store login session: %w", err)

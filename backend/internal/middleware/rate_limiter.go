@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ippkg "github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -21,6 +22,9 @@ type RateLimitFailureMode int
 const (
 	RateLimitFailOpen RateLimitFailureMode = iota
 	RateLimitFailClose
+	// RateLimitFailUnavailable fails closed with a 503, without treating a
+	// dependency outage as a client quota violation. Legacy routes keep 429.
+	RateLimitFailUnavailable
 )
 
 // RateLimitOptions 限流可选配置
@@ -150,7 +154,7 @@ func (r *RateLimiter) Limit(key string, limit int, window time.Duration) gin.Han
 // LimitWithOptions 返回速率限制中间件（带可选配置）
 func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Duration, opts RateLimitOptions) gin.HandlerFunc {
 	failureMode := opts.FailureMode
-	if failureMode != RateLimitFailClose {
+	if failureMode != RateLimitFailClose && failureMode != RateLimitFailUnavailable {
 		failureMode = RateLimitFailOpen
 	}
 
@@ -158,6 +162,11 @@ func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Durati
 		result, err := r.Allow(c.Request.Context(), key+":"+rateLimitClientKey(clientIPForRateLimit(c), opts.IPv6PrefixBits), limit, window)
 		if err != nil {
 			log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", r.prefix+key, failureModeLabel(failureMode), err)
+			if failureMode == RateLimitFailUnavailable {
+				response.ErrorWithDetails(c, http.StatusServiceUnavailable, "service temporarily unavailable", "SERVICE_UNAVAILABLE", nil)
+				c.Abort()
+				return
+			}
 			if failureMode == RateLimitFailClose {
 				abortRateLimit(c, window)
 				return
@@ -169,6 +178,12 @@ func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Durati
 
 		// 超过限制
 		if !result.Allowed {
+			if failureMode == RateLimitFailUnavailable {
+				setRateLimitRetryAfter(c, result.RetryAfter)
+				response.ErrorWithDetails(c, http.StatusTooManyRequests, "too many requests", "RATE_LIMIT_EXCEEDED", nil)
+				c.Abort()
+				return
+			}
 			abortRateLimit(c, result.RetryAfter)
 			return
 		}
@@ -186,6 +201,14 @@ func windowTTLMillis(window time.Duration) int64 {
 }
 
 func abortRateLimit(c *gin.Context, retryAfter time.Duration) {
+	setRateLimitRetryAfter(c, retryAfter)
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+		"error":   "rate limit exceeded",
+		"message": "Too many requests, please try again later",
+	})
+}
+
+func setRateLimitRetryAfter(c *gin.Context, retryAfter time.Duration) {
 	if retryAfter > 0 {
 		seconds := int64(retryAfter / time.Second)
 		if retryAfter%time.Second > 0 {
@@ -193,13 +216,12 @@ func abortRateLimit(c *gin.Context, retryAfter time.Duration) {
 		}
 		c.Header("Retry-After", strconv.FormatInt(seconds, 10))
 	}
-	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-		"error":   "rate limit exceeded",
-		"message": "Too many requests, please try again later",
-	})
 }
 
 func failureModeLabel(mode RateLimitFailureMode) string {
+	if mode == RateLimitFailUnavailable {
+		return "fail-unavailable"
+	}
 	if mode == RateLimitFailClose {
 		return "fail-close"
 	}

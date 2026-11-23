@@ -189,6 +189,37 @@ func TestOllamaCloudUsageSessionRouteOmitsAuditBody(t *testing.T) {
 	require.NotContains(t, logs[0].RequestBody, "audit-canary")
 }
 
+func TestEmailOTPAuditOmitsCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &auditCaptureRepository{}
+	audit := service.NewAuditLogService(repository, nil)
+	audit.Start()
+	t.Cleanup(audit.Stop)
+	router := gin.New()
+	router.Use(gin.HandlerFunc(NewAuditLogMiddleware(audit)))
+	paths := []string{"/auth/email-otp/send", "/auth/email-otp/verify", "/auth/email-otp/complete-registration", "/auth/login/2fa"}
+	for _, path := range paths {
+		path = "/api/v1" + path
+		router.POST(path, func(c *gin.Context) {
+			var body map[string]string
+			require.NoError(t, c.ShouldBindJSON(&body))
+			require.Equal(t, "123456", body["code"], "audit must not consume the request body")
+			c.Status(http.StatusOK)
+		})
+		request := httptest.NewRequest(http.MethodPost, path+"?code=123456", bytes.NewBufferString(`{"code":"123456","registration_token":"canary"}`))
+		request.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(httptest.NewRecorder(), request)
+	}
+	audit.Stop()
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	require.Len(t, repository.logs, len(paths))
+	for _, entry := range repository.logs {
+		require.Equal(t, "<credential-bearing body omitted>", entry.RequestBody)
+		require.NotContains(t, entry.Extra, "query")
+	}
+}
+
 // MCP OAuth 是机器凭证：只读工具同样可以批量读取邮箱等数据，必须全部入审计并带上 grant。
 func TestAuditRecordsEveryMCPOAuthReadWithGrant(t *testing.T) {
 	gin.SetMode(gin.TestMode)

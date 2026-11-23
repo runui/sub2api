@@ -22,6 +22,7 @@ type EmailTask struct {
 	TaskType string // "verify_code" or "password_reset"
 	ResetURL string // Only used for password_reset task type
 	Locale   string // Optional Accept-Language locale hint
+	emailOTP *emailOTPDelivery
 }
 
 // EmailQueueService 异步邮件队列服务
@@ -80,6 +81,10 @@ func (s *EmailQueueService) worker(id int) {
 func (s *EmailQueueService) processTask(workerID int, task EmailTask) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if task.emailOTP != nil {
+		task.emailOTP.deliver(ctx)
+		return
+	}
 
 	switch task.TaskType {
 	case TaskTypeVerifyCode:

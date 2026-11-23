@@ -82,6 +82,7 @@ type AuthService struct {
 	tencentCaptchaService *TencentCaptchaService
 	aliyunCaptchaService  *AliyunCaptchaService
 	emailQueueService     *EmailQueueService
+	emailOTPCache         EmailOTPCache
 	promoService          *PromoService
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
@@ -171,33 +172,12 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (str
 
 // RegisterWithVerification 用户注册（支持邮件验证、优惠码、邀请码和邀请返利码），返回token和用户。
 func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode, affiliateCode string) (string, *User, error) {
-	// 检查是否开放注册（默认关闭：settingService 未配置时不允许注册）
-	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
-		return "", nil, ErrRegDisabled
+	if err := s.checkEmailSignupOpen(ctx, email); err != nil {
+		return "", nil, err
 	}
-
-	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
-	if isReservedEmail(email) {
-		return "", nil, ErrEmailReserved
-	}
-	// 检查是否需要邀请码
-	var invitationRedeemCode *RedeemCode
-	if s.settingService != nil && s.settingService.IsInvitationCodeEnabled(ctx) {
-		if invitationCode == "" {
-			return "", nil, ErrInvitationCodeRequired
-		}
-		// 验证邀请码
-		redeemCode, err := s.redeemRepo.GetByCode(ctx, invitationCode)
-		if err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Invalid invitation code: %s, error: %v", invitationCode, err)
-			return "", nil, ErrInvitationCodeInvalid
-		}
-		// 检查类型和状态
-		if redeemCode.Type != RedeemTypeInvitation || !redeemCode.CanUse() {
-			logger.LegacyPrintf("service.auth", "[Auth] Invitation code invalid: type=%s, status=%s", redeemCode.Type, redeemCode.Status)
-			return "", nil, ErrInvitationCodeInvalid
-		}
-		invitationRedeemCode = redeemCode
+	invitation, err := s.emailSignupInvitation(ctx, invitationCode)
+	if err != nil {
+		return "", nil, err
 	}
 
 	// 检查是否需要邮件验证
@@ -217,87 +197,12 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 	}
 
-	// 检查邮箱是否已存在（含 +别名 / Gmail 点号变体归一化，防止单个收件箱批量派生注册）
-	existsEmail, err := s.existsByEmailOrAlias(ctx, email)
-	if err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Database error checking email exists: %v", err)
-		return "", nil, ErrServiceUnavailable
-	}
-	if existsEmail {
-		return "", nil, ErrEmailExists
-	}
-	if err := s.validateRegistrationEmailQuota(ctx, email); err != nil {
+	if err := s.checkEmailSignupAvailability(ctx, email); err != nil {
 		return "", nil, err
 	}
-
-	// 密码哈希
-	hashedPassword, err := s.HashPassword(password)
+	user, err := s.createEmailSignupUser(ctx, email, password, invitation, promoCode, affiliateCode, nil)
 	if err != nil {
-		return "", nil, fmt.Errorf("hash password: %w", err)
-	}
-
-	grantPlan := s.resolveSignupGrantPlan(ctx, "email")
-
-	// 新用户默认 RPM（0 = 不限制）。注册时写入，后续作为用户级兜底。
-	var defaultRPMLimit int
-	if s.settingService != nil {
-		defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
-	}
-
-	// 创建用户
-	user := &User{
-		Email:        email,
-		PasswordHash: hashedPassword,
-		Role:         RoleUser,
-		Balance:      grantPlan.Balance,
-		Concurrency:  grantPlan.Concurrency,
-		RPMLimit:     defaultRPMLimit,
-		Status:       StatusActive,
-	}
-
-	if err := s.createUserAndClaimInvitation(ctx, user, invitationRedeemCode); err != nil {
-		// 优先检查邮箱冲突错误（竞态条件下可能发生）
-		switch {
-		case errors.Is(err, ErrEmailExists):
-			return "", nil, ErrEmailExists
-		case errors.Is(err, ErrEmailDomainRegistrationLimit):
-			return "", nil, ErrEmailDomainRegistrationLimit
-		case errors.Is(err, ErrInvitationCodeInvalid):
-			return "", nil, ErrInvitationCodeInvalid
-		default:
-			logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
-			return "", nil, ErrServiceUnavailable
-		}
-	}
-	s.postAuthUserBootstrap(ctx, user, "email", true)
-	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
-	// snapshot user × platform quota（fail-open）
-	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-	if s.affiliateService != nil {
-		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", user.ID, err)
-		}
-		if code := strings.TrimSpace(affiliateCode); code != "" {
-			if err := s.affiliateService.BindInviterByCode(ctx, user.ID, code); err != nil {
-				// 邀请返利码绑定失败不影响注册，只记录日志
-				logger.LegacyPrintf("service.auth", "[Auth] Failed to bind affiliate inviter for user %d: %v", user.ID, err)
-			}
-		}
-	}
-
-	// 邀请码占用已由 createUserAndClaimInvitation 在“用户创建 + 邀请码占用”的
-	// 同一个数据库事务内原子完成（一次性约束，见函数注释），此处不再单独标记。
-	// 应用优惠码（如果提供且功能已启用）
-	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
-		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
-			// 优惠码应用失败不影响注册，只记录日志
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to apply promo code for user %d: %v", user.ID, err)
-		} else {
-			// 重新获取用户信息以获取更新后的余额
-			if updatedUser, err := s.userRepo.GetByID(ctx, user.ID); err == nil {
-				user = updatedUser
-			}
-		}
+		return "", nil, err
 	}
 
 	// 生成token
@@ -1238,11 +1143,31 @@ func (s *AuthService) validateRegistrationEmailQuota(ctx context.Context, email 
 	if s.settingService.IsRegistrationEmailBlacklisted(ctx, email) {
 		return ErrEmailBlocked
 	}
-	whitelist := s.settingService.GetRegistrationEmailSuffixWhitelist(ctx)
+	return s.validateRegistrationEmailDomainQuota(ctx, email, s.registrationEmailDomainPolicy(ctx))
+}
+
+type registrationEmailDomainPolicy struct {
+	whitelist    []string
+	quotaEnabled bool
+}
+
+func (s *AuthService) registrationEmailDomainPolicy(ctx context.Context) registrationEmailDomainPolicy {
+	if s == nil || s.settingService == nil {
+		return registrationEmailDomainPolicy{}
+	}
+	policy := registrationEmailDomainPolicy{whitelist: s.settingService.GetRegistrationEmailSuffixWhitelist(ctx)}
+	if len(policy.whitelist) > 0 {
+		policy.quotaEnabled = s.settingService.IsRegistrationEmailDomainQuotaEnabled(ctx)
+	}
+	return policy
+}
+
+func (s *AuthService) validateRegistrationEmailDomainQuota(ctx context.Context, email string, policy registrationEmailDomainPolicy) error {
+	whitelist := policy.whitelist
 	if !IsRegistrationEmailSuffixLimited(email, whitelist) {
 		return nil
 	}
-	if !s.settingService.IsRegistrationEmailDomainQuotaEnabled(ctx) {
+	if !policy.quotaEnabled {
 		return buildEmailSuffixNotAllowedError(whitelist)
 	}
 
@@ -1271,19 +1196,20 @@ func (s *AuthService) validateRegistrationEmailQuota(ctx context.Context, email 
 }
 
 func (s *AuthService) createUserWithRegistrationEmailGuard(ctx context.Context, user *User) error {
+	return s.createUserWithRegistrationDomainPolicy(ctx, user, s.registrationEmailDomainPolicy(ctx))
+}
+
+func (s *AuthService) createUserWithRegistrationDomainPolicy(ctx context.Context, user *User, policy registrationEmailDomainPolicy) error {
 	if s == nil || s.userRepo == nil {
 		return ErrServiceUnavailable
 	}
-	whitelist := []string{}
-	if s.settingService != nil {
-		whitelist = s.settingService.GetRegistrationEmailSuffixWhitelist(ctx)
-	}
+	whitelist := policy.whitelist
 	domain := RegistrationEmailDomain(user.Email)
 	if !IsRegistrationEmailSuffixLimited(user.Email, whitelist) {
 		return s.userRepo.CreateWithEmailAliasGuard(ctx, user)
 	}
 	// 开关关闭时非白名单域名在校验阶段已被拒绝；此处兜底防御设置竞态变更。
-	if s.settingService == nil || !s.settingService.IsRegistrationEmailDomainQuotaEnabled(ctx) {
+	if !policy.quotaEnabled {
 		return buildEmailSuffixNotAllowedError(whitelist)
 	}
 	if domain == "" {
@@ -1310,24 +1236,31 @@ func (s *AuthService) createUserWithRegistrationEmailGuard(ctx context.Context, 
 //   - 并发下只有一个事务能占用成功，其余事务回滚——既不产生多余账号，也不让码被烧掉；
 //   - 事务回滚同时撤销用户创建，避免“账号已建、码被占用”的中间态。
 //
-// 无邀请码时保持原单次创建路径（不开事务）；entClient 缺失的异常配置下退化为顺序执行，
-// 并发正确性仍由 Use 的条件更新兜底（可能产生孤儿用户，但不会放行第二个注册）。
-func (s *AuthService) createUserAndClaimInvitation(ctx context.Context, user *User, invitation *RedeemCode) error {
+// 无邀请码时由用户仓储管理其写入事务。仅为旧调用保留无 entClient 时的顺序路径：
+// 此时 Use 仍只允许一个请求占用邀请码，但失败者的用户写入不能回滚。
+// 邮箱验证码注册在调用前拒绝这种配置，不能留下可登录的孤儿账号。
+func (s *AuthService) createUserAndClaimInvitation(ctx context.Context, user *User, invitation *RedeemCode, domainPolicy *registrationEmailDomainPolicy) error {
+	// Settings reads use the main connection pool, not this write transaction.
+	// Resolve the policy before taking a connection for the invitation claim.
+	if domainPolicy == nil {
+		legacy := s.registrationEmailDomainPolicy(ctx)
+		domainPolicy = &legacy
+	}
 	commitUser := func(execCtx context.Context) error {
-		if err := s.createUserWithRegistrationEmailGuard(execCtx, user); err != nil {
+		if err := s.createUserWithRegistrationDomainPolicy(execCtx, user, *domainPolicy); err != nil {
 			return err
 		}
 		if invitation == nil {
 			return nil
 		}
-		// createUserWithRegistrationEmailGuard 会回填 user.ID（applyUserEntityToService），
+		// 仓储写入会回填 user.ID（applyUserEntityToService），
 		// 直接以其原子占用邀请码；占用失败即整体回滚（含用户创建，见 user_repo.create
 		// 对外部事务的复用）。
 		if err := s.redeemRepo.Use(execCtx, invitation.ID, user.ID); err != nil {
-			// 并发下唯一的合法失败路径：另一个注册已占用该码
+			// Any claim failure must roll back the account, including a concurrent claim.
 			logger.LegacyPrintf("service.auth",
-				"[Auth] Rejected registration: invitation code %s already claimed (user_id=%d err=%v)",
-				invitation.Code, user.ID, err)
+				"[Auth] Rejected registration: invitation claim failed (invitation_id=%d user_id=%d)",
+				invitation.ID, user.ID)
 			return ErrInvitationCodeInvalid
 		}
 		return nil

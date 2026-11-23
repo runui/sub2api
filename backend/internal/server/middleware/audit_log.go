@@ -116,6 +116,7 @@ var auditSensitiveReads = map[string]string{
 	"GET /api/v1/admin/redeem-codes/export":       "admin.redeem_codes.export",
 	"GET /api/v1/admin/backups/:id/download-url":  "admin.backups.download",
 	"GET /api/v1/admin/settings/admin-api-key":    "admin.admin_api_key.read",
+	"GET /api/v1/admin/settings/email-otp":        "admin.settings.email_otp.read",
 	"GET /api/v1/admin/users/:id/api-keys":        "admin.users.api_keys.read",
 	"GET /api/v1/admin/groups/:id/api-keys":       "admin.groups.api_keys.read",
 	"GET /api/v1/admin/backups/s3-config":         "admin.backups.s3_config.read",
@@ -126,6 +127,8 @@ var auditSensitiveReads = map[string]string{
 var auditActionOverrides = map[string]string{
 	"POST /api/v1/auth/login":                                 service.AuditActionLogin,
 	"POST /api/v1/auth/login/2fa":                             service.AuditActionLogin2FA,
+	"POST /api/v1/auth/email-otp/verify":                      service.AuditActionLogin,
+	"POST /api/v1/auth/email-otp/complete-registration":       service.AuditActionRegister,
 	"POST /api/v1/auth/passkey/login/finish":                  service.AuditActionLogin,
 	"POST /api/v1/auth/register":                              service.AuditActionRegister,
 	"POST /api/v1/auth/refresh":                               service.AuditActionTokenRefresh,
@@ -150,6 +153,10 @@ var auditActionOverrides = map[string]string{
 // 这类 body 的凭证内嵌在普通字符串值里，键级脱敏无法覆盖，整体不入库。
 var auditBodyOmittedRoutes = map[string]struct{}{
 	"POST /api/v1/auth/passkey/login/finish":                    {},
+	"POST /api/v1/auth/login/2fa":                               {},
+	"POST /api/v1/auth/email-otp/send":                          {},
+	"POST /api/v1/auth/email-otp/verify":                        {},
+	"POST /api/v1/auth/email-otp/complete-registration":         {},
 	"POST /api/v1/user/passkeys/register/finish":                {},
 	"POST /api/v1/admin/accounts/import/codex-session":          {},
 	"PUT /api/v1/admin/accounts/:id/ollama-cloud-usage/session": {},
@@ -291,8 +298,12 @@ func NewAuditLogMiddleware(auditService *service.AuditLogService) AuditLogMiddle
 			}
 			extra["params"] = params
 		}
-		if q := service.RedactAuditQuery(c.Request.URL.RawQuery); q != "" {
-			extra["query"] = q
+		// Neither OTP nor its second factor accepts credentials in the URL.
+		// Omit even mistakenly supplied query values on these routes.
+		if !strings.HasPrefix(c.FullPath(), "/api/v1/auth/email-otp/") && routeKey != "POST /api/v1/auth/login/2fa" {
+			if q := service.RedactAuditQuery(c.Request.URL.RawQuery); q != "" {
+				extra["query"] = q
+			}
 		}
 		if len(extra) > 0 {
 			entry.Extra = extra

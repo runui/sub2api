@@ -578,6 +578,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
+		adminSettings.GET("/email-otp", h.Admin.Setting.GetEmailOTPSettings)
+		adminSettings.PUT("/email-otp", h.Admin.Setting.UpdateEmailOTPSettings)
 		adminSettings.GET("/email-templates", h.Admin.Setting.ListEmailTemplates)
 		adminSettings.POST("/email-template-preview", h.Admin.Setting.PreviewEmailTemplate)
 		adminSettings.GET("/email-templates/:event/:locale", h.Admin.Setting.GetEmailTemplate)

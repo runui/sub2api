@@ -71,3 +71,17 @@ func TestAuthRoutesRateLimitFailCloseWhenRedisUnavailable(t *testing.T) {
 		require.Contains(t, w.Body.String(), "rate limit exceeded", "path=%s", path)
 	}
 }
+
+func TestEmailOTPAuthRoutesReturnUnavailableWhenRedisIsDown(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	require.NoError(t, rdb.Close())
+	router := newAuthRoutesTestRouter(rdb)
+	for _, path := range []string{"send", "verify", "complete-registration"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/email-otp/"+path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, path)
+		require.Contains(t, w.Body.String(), `"reason":"SERVICE_UNAVAILABLE"`)
+	}
+}

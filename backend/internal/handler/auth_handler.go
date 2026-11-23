@@ -311,14 +311,8 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 
 	// Get the login session
 	session, err := h.totpService.GetLoginSession(c.Request.Context(), req.TempToken)
-	if err != nil || session == nil {
-		tokenPrefix := ""
-		if len(req.TempToken) >= 8 {
-			tokenPrefix = req.TempToken[:8]
-		}
-		slog.Debug("login_2fa_session_invalid",
-			"temp_token_prefix", tokenPrefix,
-			"error", err)
+	if err != nil || session == nil || service.IsEmailOTPTotpToken(req.TempToken) != (session.EmailOTP != nil) {
+		slog.Debug("login_2fa_session_invalid", "lookup_failed", err != nil)
 		response.BadRequest(c, "Invalid or expired 2FA session")
 		return
 	}
@@ -349,6 +343,11 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 
 	if err := h.ensureBackendModeAllowsUser(c.Request.Context(), user); err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+
+	if session.EmailOTP != nil {
+		h.finishEmailOTPTotpLogin(c, session, user, req.TempToken)
 		return
 	}
 
