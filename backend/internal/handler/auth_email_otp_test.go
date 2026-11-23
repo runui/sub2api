@@ -162,7 +162,7 @@ func (f *emailOTPFixture) send(email string) string {
 	return data["challenge_id"].(string)
 }
 
-var emailOTPTestCodePattern = regexp.MustCompile(`<strong>([0-9]{6})</strong>`)
+var emailOTPTestCodePattern = regexp.MustCompile(`>\s*([0-9]{6})\s*<`)
 
 func (f *emailOTPFixture) challenge(email string) (string, string) {
 	f.t.Helper()

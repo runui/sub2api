@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime/quotedprintable"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -456,6 +458,34 @@ func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.
 
 	require.NoError(t, svc.Send(ctx, input))
 	require.Equal(t, int64(1), smtpServer.messageCount())
+}
+
+func TestEmailOTPSendUsesSharedVerificationTemplate(t *testing.T) {
+	ctx := context.Background()
+	repo := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	require.NoError(t, repo.Set(ctx, SettingKeySiteName, "Example"))
+
+	emailSvc := NewEmailService(repo, nil)
+	svc := NewNotificationEmailService(repo, emailSvc)
+	_, err := svc.UpdateTemplate(ctx, NotificationEmailEventAuthVerifyCode, "zh", "{{site_name}} custom verification",
+		"<p>{{recipient_name}}: {{verification_code}} ({{expires_in_minutes}} min)</p>")
+	require.NoError(t, err)
+
+	require.NoError(t, emailSvc.sendEmailOTP(ctx, "alice@example.com", "052038", "zh-CN,zh;q=0.9"))
+	require.Equal(t, int64(1), smtpServer.messageCount())
+	require.Contains(t, smtpServer.lastMessage(), "Subject: Example custom verification")
+	minutes := int(EmailOTPCodeTTL / time.Minute)
+	require.Equal(t, fmt.Sprintf("<p>alice: 052038 (%d min)</p>", minutes), strings.TrimSpace(smtpServer.lastMessageBody(t)))
+
+	require.NoError(t, repo.Set(ctx, notificationEmailTemplateKey(NotificationEmailEventAuthVerifyCode, "zh"), "invalid JSON"))
+	require.NoError(t, emailSvc.sendEmailOTP(ctx, "alice@example.com", "091827", "zh-CN"))
+	require.Equal(t, int64(2), smtpServer.messageCount())
+	body := smtpServer.lastMessageBody(t)
+	require.Contains(t, body, "邮箱验证码")
+	require.Contains(t, body, "091827")
+	require.Contains(t, body, fmt.Sprintf("验证码将在 <strong>%d</strong> 分钟后失效", minutes))
 }
 
 func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
