@@ -41,13 +41,16 @@ func (s *PaymentService) HandlePaymentNotification(ctx context.Context, n *payme
 	if n.Status != payment.NotificationStatusSuccess {
 		return nil
 	}
+	if strings.TrimSpace(n.OrderID) == "" {
+		return ErrOrderNotFound
+	}
 	// Look up order by out_trade_no (the external order ID we sent to the provider)
 	order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(n.OrderID)).Only(ctx)
 	if err != nil {
 		// Fallback only for true legacy "sub2_N" DB-ID payloads when the
 		// current out_trade_no lookup genuinely did not find an order.
 		if oid, ok := parseLegacyPaymentOrderID(n.OrderID, err); ok {
-			return s.confirmPayment(ctx, oid, n.TradeNo, n.Amount, pk, n.Metadata)
+			return s.confirmPaymentForReference(ctx, oid, n.TradeNo, n.Amount, pk, n.Metadata, true)
 		}
 		if dbent.IsNotFound(err) {
 			return fmt.Errorf("%w: out_trade_no=%s", ErrOrderNotFound, n.OrderID)
@@ -104,10 +107,19 @@ func parseLegacyPaymentOrderID(orderID string, lookupErr error) (int64, bool) {
 }
 
 func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo string, paid float64, pk string, metadata map[string]string) error {
+	return s.confirmPaymentForReference(ctx, oid, tradeNo, paid, pk, metadata, false)
+}
+
+func (s *PaymentService) confirmPaymentForReference(ctx context.Context, oid int64, tradeNo string, paid float64, pk string, metadata map[string]string, legacyReference bool) error {
 	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
 	if err != nil {
 		slog.Error("order not found", "orderID", oid)
 		return nil
+	}
+	// Neither an unstarted checkout nor its legacy sub2_<id> alias is a
+	// provider reference, even if the checkout has already expired.
+	if o.CheckoutKeyHash != nil && (legacyReference || o.CheckoutStartedAt == nil) {
+		return ErrOrderNotFound
 	}
 	instanceProviderKey := ""
 	if inst, instErr := s.getOrderProviderInstance(ctx, o); instErr == nil && inst != nil {
@@ -137,7 +149,16 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		})
 		return fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+	currency := PaymentOrderCurrency(o)
+	amountMatches := math.Abs(paid-o.PayAmount) <= paymentAmountToleranceForCurrency(currency)
+	if o.CheckoutStartedAt != nil {
+		// Checkout authorizes the exact displayed charge, not the legacy
+		// provider tolerance, using the selected provider's settlement currency.
+		expectedMinor, expectedErr := payment.AmountToMinorUnit(strconv.FormatFloat(o.PayAmount, 'f', -1, 64), currency)
+		paidMinor, paidErr := payment.AmountToMinorUnit(strconv.FormatFloat(paid, 'f', -1, 64), currency)
+		amountMatches = expectedErr == nil && paidErr == nil && expectedMinor > 0 && expectedMinor == paidMinor
+	}
+	if !amountMatches {
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
 	}
@@ -157,6 +178,13 @@ func isValidProviderAmount(amount float64) bool {
 }
 
 func validateProviderNotificationMetadata(order *dbent.PaymentOrder, providerKey string, metadata map[string]string) error {
+	if order != nil && order.CheckoutStartedAt != nil && strings.TrimSpace(providerKey) == payment.TypeWxpay {
+		snapshot := psOrderProviderSnapshot(order)
+		if snapshot == nil || snapshot.MerchantAppID == "" || snapshot.MerchantID == "" ||
+			metadata["appid"] == "" || metadata["mchid"] == "" || metadata["currency"] == "" {
+			return fmt.Errorf("checkout WeChat payment is missing merchant or currency evidence")
+		}
+	}
 	return validateProviderSnapshotMetadata(order, providerKey, metadata)
 }
 
@@ -184,6 +212,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		paymentorder.Or(
 			paymentorder.StatusEQ(OrderStatusPending),
 			paymentorder.StatusEQ(OrderStatusCancelled),
+			paymentorder.And(paymentorder.StatusEQ(OrderStatusExpired), paymentorder.CheckoutStartedAtNotNil()),
 			paymentorder.And(
 				paymentorder.StatusEQ(OrderStatusExpired),
 				paymentorder.UpdatedAtGTE(grace),

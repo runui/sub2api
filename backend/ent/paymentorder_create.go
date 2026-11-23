@@ -259,6 +259,90 @@ func (_c *PaymentOrderCreate) SetProviderSnapshot(v map[string]interface{}) *Pay
 	return _c
 }
 
+// SetCheckoutKeyHash sets the "checkout_key_hash" field.
+func (_c *PaymentOrderCreate) SetCheckoutKeyHash(v string) *PaymentOrderCreate {
+	_c.mutation.SetCheckoutKeyHash(v)
+	return _c
+}
+
+// SetNillableCheckoutKeyHash sets the "checkout_key_hash" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCheckoutKeyHash(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCheckoutKeyHash(*v)
+	}
+	return _c
+}
+
+// SetCheckoutRequestHash sets the "checkout_request_hash" field.
+func (_c *PaymentOrderCreate) SetCheckoutRequestHash(v string) *PaymentOrderCreate {
+	_c.mutation.SetCheckoutRequestHash(v)
+	return _c
+}
+
+// SetNillableCheckoutRequestHash sets the "checkout_request_hash" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCheckoutRequestHash(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCheckoutRequestHash(*v)
+	}
+	return _c
+}
+
+// SetCheckoutPlanName sets the "checkout_plan_name" field.
+func (_c *PaymentOrderCreate) SetCheckoutPlanName(v string) *PaymentOrderCreate {
+	_c.mutation.SetCheckoutPlanName(v)
+	return _c
+}
+
+// SetNillableCheckoutPlanName sets the "checkout_plan_name" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCheckoutPlanName(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCheckoutPlanName(*v)
+	}
+	return _c
+}
+
+// SetCheckoutPlanCurrency sets the "checkout_plan_currency" field.
+func (_c *PaymentOrderCreate) SetCheckoutPlanCurrency(v string) *PaymentOrderCreate {
+	_c.mutation.SetCheckoutPlanCurrency(v)
+	return _c
+}
+
+// SetNillableCheckoutPlanCurrency sets the "checkout_plan_currency" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCheckoutPlanCurrency(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCheckoutPlanCurrency(*v)
+	}
+	return _c
+}
+
+// SetCheckoutStartedAt sets the "checkout_started_at" field.
+func (_c *PaymentOrderCreate) SetCheckoutStartedAt(v time.Time) *PaymentOrderCreate {
+	_c.mutation.SetCheckoutStartedAt(v)
+	return _c
+}
+
+// SetNillableCheckoutStartedAt sets the "checkout_started_at" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCheckoutStartedAt(v *time.Time) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCheckoutStartedAt(*v)
+	}
+	return _c
+}
+
+// SetCheckoutReconciledAt sets the "checkout_reconciled_at" field.
+func (_c *PaymentOrderCreate) SetCheckoutReconciledAt(v time.Time) *PaymentOrderCreate {
+	_c.mutation.SetCheckoutReconciledAt(v)
+	return _c
+}
+
+// SetNillableCheckoutReconciledAt sets the "checkout_reconciled_at" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCheckoutReconciledAt(v *time.Time) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCheckoutReconciledAt(*v)
+	}
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *PaymentOrderCreate) SetStatus(v string) *PaymentOrderCreate {
 	_c.mutation.SetStatus(v)
@@ -648,6 +732,26 @@ func (_c *PaymentOrderCreate) check() error {
 			return &ValidationError{Name: "provider_key", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.provider_key": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.CheckoutKeyHash(); ok {
+		if err := paymentorder.CheckoutKeyHashValidator(v); err != nil {
+			return &ValidationError{Name: "checkout_key_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.checkout_key_hash": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.CheckoutRequestHash(); ok {
+		if err := paymentorder.CheckoutRequestHashValidator(v); err != nil {
+			return &ValidationError{Name: "checkout_request_hash", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.checkout_request_hash": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.CheckoutPlanName(); ok {
+		if err := paymentorder.CheckoutPlanNameValidator(v); err != nil {
+			return &ValidationError{Name: "checkout_plan_name", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.checkout_plan_name": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.CheckoutPlanCurrency(); ok {
+		if err := paymentorder.CheckoutPlanCurrencyValidator(v); err != nil {
+			return &ValidationError{Name: "checkout_plan_currency", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.checkout_plan_currency": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "PaymentOrder.status"`)}
 	}
@@ -805,6 +909,30 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.ProviderSnapshot(); ok {
 		_spec.SetField(paymentorder.FieldProviderSnapshot, field.TypeJSON, value)
 		_node.ProviderSnapshot = value
+	}
+	if value, ok := _c.mutation.CheckoutKeyHash(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutKeyHash, field.TypeString, value)
+		_node.CheckoutKeyHash = &value
+	}
+	if value, ok := _c.mutation.CheckoutRequestHash(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutRequestHash, field.TypeString, value)
+		_node.CheckoutRequestHash = &value
+	}
+	if value, ok := _c.mutation.CheckoutPlanName(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutPlanName, field.TypeString, value)
+		_node.CheckoutPlanName = &value
+	}
+	if value, ok := _c.mutation.CheckoutPlanCurrency(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutPlanCurrency, field.TypeString, value)
+		_node.CheckoutPlanCurrency = &value
+	}
+	if value, ok := _c.mutation.CheckoutStartedAt(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutStartedAt, field.TypeTime, value)
+		_node.CheckoutStartedAt = &value
+	}
+	if value, ok := _c.mutation.CheckoutReconciledAt(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutReconciledAt, field.TypeTime, value)
+		_node.CheckoutReconciledAt = &value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(paymentorder.FieldStatus, field.TypeString, value)
@@ -1313,6 +1441,42 @@ func (u *PaymentOrderUpsert) ClearProviderSnapshot() *PaymentOrderUpsert {
 	return u
 }
 
+// SetCheckoutStartedAt sets the "checkout_started_at" field.
+func (u *PaymentOrderUpsert) SetCheckoutStartedAt(v time.Time) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCheckoutStartedAt, v)
+	return u
+}
+
+// UpdateCheckoutStartedAt sets the "checkout_started_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCheckoutStartedAt() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCheckoutStartedAt)
+	return u
+}
+
+// ClearCheckoutStartedAt clears the value of the "checkout_started_at" field.
+func (u *PaymentOrderUpsert) ClearCheckoutStartedAt() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldCheckoutStartedAt)
+	return u
+}
+
+// SetCheckoutReconciledAt sets the "checkout_reconciled_at" field.
+func (u *PaymentOrderUpsert) SetCheckoutReconciledAt(v time.Time) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCheckoutReconciledAt, v)
+	return u
+}
+
+// UpdateCheckoutReconciledAt sets the "checkout_reconciled_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCheckoutReconciledAt() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCheckoutReconciledAt)
+	return u
+}
+
+// ClearCheckoutReconciledAt clears the value of the "checkout_reconciled_at" field.
+func (u *PaymentOrderUpsert) ClearCheckoutReconciledAt() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldCheckoutReconciledAt)
+	return u
+}
+
 // SetStatus sets the "status" field.
 func (u *PaymentOrderUpsert) SetStatus(v string) *PaymentOrderUpsert {
 	u.Set(paymentorder.FieldStatus, v)
@@ -1594,6 +1758,18 @@ func (u *PaymentOrderUpsert) UpdateUpdatedAt() *PaymentOrderUpsert {
 func (u *PaymentOrderUpsertOne) UpdateNewValues() *PaymentOrderUpsertOne {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
 	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.CheckoutKeyHash(); exists {
+			s.SetIgnore(paymentorder.FieldCheckoutKeyHash)
+		}
+		if _, exists := u.create.mutation.CheckoutRequestHash(); exists {
+			s.SetIgnore(paymentorder.FieldCheckoutRequestHash)
+		}
+		if _, exists := u.create.mutation.CheckoutPlanName(); exists {
+			s.SetIgnore(paymentorder.FieldCheckoutPlanName)
+		}
+		if _, exists := u.create.mutation.CheckoutPlanCurrency(); exists {
+			s.SetIgnore(paymentorder.FieldCheckoutPlanCurrency)
+		}
 		if _, exists := u.create.mutation.CreatedAt(); exists {
 			s.SetIgnore(paymentorder.FieldCreatedAt)
 		}
@@ -2052,6 +2228,48 @@ func (u *PaymentOrderUpsertOne) UpdateProviderSnapshot() *PaymentOrderUpsertOne 
 func (u *PaymentOrderUpsertOne) ClearProviderSnapshot() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearProviderSnapshot()
+	})
+}
+
+// SetCheckoutStartedAt sets the "checkout_started_at" field.
+func (u *PaymentOrderUpsertOne) SetCheckoutStartedAt(v time.Time) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCheckoutStartedAt(v)
+	})
+}
+
+// UpdateCheckoutStartedAt sets the "checkout_started_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCheckoutStartedAt() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCheckoutStartedAt()
+	})
+}
+
+// ClearCheckoutStartedAt clears the value of the "checkout_started_at" field.
+func (u *PaymentOrderUpsertOne) ClearCheckoutStartedAt() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCheckoutStartedAt()
+	})
+}
+
+// SetCheckoutReconciledAt sets the "checkout_reconciled_at" field.
+func (u *PaymentOrderUpsertOne) SetCheckoutReconciledAt(v time.Time) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCheckoutReconciledAt(v)
+	})
+}
+
+// UpdateCheckoutReconciledAt sets the "checkout_reconciled_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCheckoutReconciledAt() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCheckoutReconciledAt()
+	})
+}
+
+// ClearCheckoutReconciledAt clears the value of the "checkout_reconciled_at" field.
+func (u *PaymentOrderUpsertOne) ClearCheckoutReconciledAt() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCheckoutReconciledAt()
 	})
 }
 
@@ -2546,6 +2764,18 @@ func (u *PaymentOrderUpsertBulk) UpdateNewValues() *PaymentOrderUpsertBulk {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
 	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
 		for _, b := range u.create.builders {
+			if _, exists := b.mutation.CheckoutKeyHash(); exists {
+				s.SetIgnore(paymentorder.FieldCheckoutKeyHash)
+			}
+			if _, exists := b.mutation.CheckoutRequestHash(); exists {
+				s.SetIgnore(paymentorder.FieldCheckoutRequestHash)
+			}
+			if _, exists := b.mutation.CheckoutPlanName(); exists {
+				s.SetIgnore(paymentorder.FieldCheckoutPlanName)
+			}
+			if _, exists := b.mutation.CheckoutPlanCurrency(); exists {
+				s.SetIgnore(paymentorder.FieldCheckoutPlanCurrency)
+			}
 			if _, exists := b.mutation.CreatedAt(); exists {
 				s.SetIgnore(paymentorder.FieldCreatedAt)
 			}
@@ -3005,6 +3235,48 @@ func (u *PaymentOrderUpsertBulk) UpdateProviderSnapshot() *PaymentOrderUpsertBul
 func (u *PaymentOrderUpsertBulk) ClearProviderSnapshot() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearProviderSnapshot()
+	})
+}
+
+// SetCheckoutStartedAt sets the "checkout_started_at" field.
+func (u *PaymentOrderUpsertBulk) SetCheckoutStartedAt(v time.Time) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCheckoutStartedAt(v)
+	})
+}
+
+// UpdateCheckoutStartedAt sets the "checkout_started_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCheckoutStartedAt() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCheckoutStartedAt()
+	})
+}
+
+// ClearCheckoutStartedAt clears the value of the "checkout_started_at" field.
+func (u *PaymentOrderUpsertBulk) ClearCheckoutStartedAt() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCheckoutStartedAt()
+	})
+}
+
+// SetCheckoutReconciledAt sets the "checkout_reconciled_at" field.
+func (u *PaymentOrderUpsertBulk) SetCheckoutReconciledAt(v time.Time) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCheckoutReconciledAt(v)
+	})
+}
+
+// UpdateCheckoutReconciledAt sets the "checkout_reconciled_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCheckoutReconciledAt() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCheckoutReconciledAt()
+	})
+}
+
+// ClearCheckoutReconciledAt clears the value of the "checkout_reconciled_at" field.
+func (u *PaymentOrderUpsertBulk) ClearCheckoutReconciledAt() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCheckoutReconciledAt()
 	})
 }
 

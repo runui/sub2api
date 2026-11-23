@@ -125,6 +125,11 @@ onMounted(async () => {
     return
   }
 
+  if (resumeToken && redirectURL.origin === window.location.origin && /^\/payment\/checkout\/[a-f0-9]{32}$/.test(redirectURL.pathname)) {
+    await router.replace({ path: redirectURL.pathname, hash: `#${new URLSearchParams({ wechat_resume_token: resumeToken })}` })
+    return
+  }
+
   const query: Record<string, string> = {
     ...Object.fromEntries(redirectURL.searchParams.entries()),
     wechat_resume: '1',

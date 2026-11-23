@@ -110,6 +110,16 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Empty(t, w.Header().Get("Content-Security-Policy"))
 	})
 
+	t.Run("checkout_stripe_return_does_not_send_referrer", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/payment/checkout/0123456789abcdef0123456789abcdef?payment_intent_client_secret=test", nil)
+
+		SecurityHeaders(config.CSPConfig{}, nil)(c)
+
+		assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
+	})
+
 	t.Run("csp_enabled_sets_csp_header", func(t *testing.T) {
 		cfg := config.CSPConfig{
 			Enabled: true,

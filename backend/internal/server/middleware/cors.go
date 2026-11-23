@@ -104,9 +104,20 @@ func CORS(cfg config.CORSConfig) gin.HandlerFunc {
 			if allowCredentials {
 				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
-			c.Writer.Header().Set("Access-Control-Allow-Headers", allowHeadersValue)
+			headers := allowHeadersValue
+			exposed := "ETag, Server-Timing, WWW-Authenticate"
+			// Checkout may be opened by a separately hosted client. Extend only its
+			// headers and still require the configured origin allowlist.
+			switch path := c.Request.URL.Path; {
+			case strings.HasPrefix(path, "/api/v1/payment/checkout/"):
+				headers += ", Idempotency-Key"
+				exposed += ", Retry-After"
+			case strings.HasPrefix(path, "/api/v1/payment/public/checkout/"):
+				exposed += ", Retry-After"
+			}
+			c.Writer.Header().Set("Access-Control-Allow-Headers", headers)
 			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
-			c.Writer.Header().Set("Access-Control-Expose-Headers", "ETag, Server-Timing, WWW-Authenticate")
+			c.Writer.Header().Set("Access-Control-Expose-Headers", exposed)
 			c.Writer.Header().Set("Access-Control-Max-Age", "86400")
 		}
 		// 处理预检请求

@@ -165,6 +165,10 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Legacy creation and checkout share admission to the pending limit.
+	if err := lockPaymentOrderUser(ctx, tx, req.UserID); err != nil {
+		return nil, err
+	}
 	if err := s.checkPendingLimit(ctx, tx, req.UserID, cfg.MaxPendingOrders); err != nil {
 		return nil, err
 	}
@@ -854,7 +858,8 @@ func (s *PaymentService) GetOrderByID(ctx context.Context, orderID int64) (*dben
 }
 
 func (s *PaymentService) GetUserOrders(ctx context.Context, userID int64, p OrderListParams) ([]*dbent.PaymentOrder, int, error) {
-	q := s.entClient.PaymentOrder.Query().Where(paymentorder.UserIDEQ(userID))
+	q := s.entClient.PaymentOrder.Query().Where(paymentorder.UserIDEQ(userID),
+		paymentorder.Or(paymentorder.CheckoutKeyHashIsNil(), paymentorder.CheckoutStartedAtNotNil()))
 	if p.Status != "" {
 		q = q.Where(paymentorder.StatusEQ(p.Status))
 	}
@@ -878,7 +883,7 @@ func (s *PaymentService) GetUserOrders(ctx context.Context, userID int64, p Orde
 
 // AdminListOrders returns a paginated list of orders. If userID > 0, filters by user.
 func (s *PaymentService) AdminListOrders(ctx context.Context, userID int64, p OrderListParams) ([]*dbent.PaymentOrder, int, error) {
-	q := s.entClient.PaymentOrder.Query()
+	q := s.entClient.PaymentOrder.Query().Where(paymentorder.Or(paymentorder.CheckoutKeyHashIsNil(), paymentorder.CheckoutStartedAtNotNil()))
 	if userID > 0 {
 		q = q.Where(paymentorder.UserIDEQ(userID))
 	}

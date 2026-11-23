@@ -159,6 +159,7 @@ func (a *Alipay) createWapTrade(client *alipay.Client, req payment.CreatePayment
 	param.ProductCode = alipayProductCodeWapPay
 	param.NotifyURL = notifyURL
 	param.ReturnURL = returnURL
+	param.TimeExpire = alipayCheckoutDeadline(req)
 
 	payURL, err := alipayTradeWapPay(client, param)
 	if err != nil {
@@ -198,6 +199,7 @@ func (a *Alipay) createPrecreateTrade(ctx context.Context, client *alipay.Client
 	param.Subject = req.Subject
 	param.ProductCode = alipayProductCodePreCreate
 	param.NotifyURL = notifyURL
+	param.TimeExpire = alipayCheckoutDeadline(req)
 
 	rsp, err := alipayTradePreCreate(ctx, client, param)
 	if err != nil {
@@ -227,6 +229,7 @@ func (a *Alipay) createPagePayTrade(client *alipay.Client, req payment.CreatePay
 	param.ProductCode = alipayProductCodePagePay
 	param.NotifyURL = notifyURL
 	param.ReturnURL = returnURL
+	param.TimeExpire = alipayCheckoutDeadline(req)
 
 	payURL, err := alipayTradePagePay(client, param)
 	if err != nil {
@@ -239,6 +242,13 @@ func (a *Alipay) createPagePayTrade(client *alipay.Client, req payment.CreatePay
 		TradeNo: req.OrderID,
 		PayURL:  payURL.String(),
 	}, nil
+}
+
+func alipayCheckoutDeadline(req payment.CreatePaymentRequest) string {
+	if req.ExpiresAt == nil {
+		return ""
+	}
+	return req.ExpiresAt.In(time.FixedZone("CST", 8*60*60)).Format("2006-01-02 15:04:05")
 }
 
 // QueryOrder queries the trade status via Alipay.
@@ -283,6 +293,7 @@ func (a *Alipay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Query
 	return &payment.QueryOrderResponse{
 		TradeNo:  result.TradeNo,
 		Status:   status,
+		Closed:   result.TradeStatus == alipay.TradeStatusClosed,
 		Amount:   amount,
 		PaidAt:   result.SendPayDate,
 		Metadata: a.MerchantIdentityMetadata(),
@@ -432,17 +443,32 @@ func alipayRefundAbsenceIsFinal(requestedAt, now time.Time) bool {
 
 // CancelPayment closes a pending trade on Alipay.
 func (a *Alipay) CancelPayment(ctx context.Context, tradeNo string) error {
+	err := a.CloseCheckoutPayment(ctx, tradeNo)
+	if isTradeNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+// CloseCheckoutPayment requires a successful close, not an absent trade or a business error.
+func (a *Alipay) CloseCheckoutPayment(ctx context.Context, tradeNo string) error {
 	client, err := a.getClient()
 	if err != nil {
 		return err
 	}
 
-	_, err = client.TradeClose(ctx, alipay.TradeClose{OutTradeNo: tradeNo})
+	result, err := client.TradeClose(ctx, alipay.TradeClose{OutTradeNo: tradeNo})
 	if err != nil {
-		if isTradeNotExist(err) {
-			return nil
-		}
 		return fmt.Errorf("alipay TradeClose: %w", err)
+	}
+	if result == nil {
+		return fmt.Errorf("alipay TradeClose: empty response")
+	}
+	if result.IsFailure() {
+		return fmt.Errorf("alipay TradeClose: %w", result.Error)
+	}
+	if result.OutTradeNo != tradeNo {
+		return fmt.Errorf("alipay TradeClose: unexpected merchant order number")
 	}
 	return nil
 }

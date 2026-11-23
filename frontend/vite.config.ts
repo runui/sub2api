@@ -56,7 +56,10 @@ function injectPublicSettings(backendUrl: string): Plugin {
     apply: 'serve',
     transformIndexHtml: {
       order: 'pre',
-      async handler(html) {
+      async handler(html, ctx) {
+        // Checkout renders independently of public settings and must not wait for them.
+        const pathname = (ctx.originalUrl ?? ctx.path).split('?', 1)[0]
+        if (pathname.startsWith('/payment/checkout/')) return html
         try {
           const response = await fetch(`${backendUrl}/api/v1/settings/public`, {
             signal: AbortSignal.timeout(2000)
@@ -154,6 +157,13 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: devPort,
       proxy: {
+        // Fail fast in development if the checkout read/quote backend is unresponsive.
+        // Leave payment submission on the normal proxy: it may wait for a provider.
+        '^/api/v1/payment/public/checkout/orders/[^/?]+(?:/quote)?(?:\\?.*)?$': {
+          target: backendUrl,
+          changeOrigin: true,
+          proxyTimeout: 3000
+        },
         '/api': {
           target: backendUrl,
           changeOrigin: true

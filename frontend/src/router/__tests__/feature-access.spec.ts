@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CHECKOUT_ORDER_ROUTE } from '../checkoutRoutes'
 
 type NavigationGuard = (
   to: Record<string, any>,
@@ -116,8 +117,22 @@ describe('feature route guard', () => {
     authStore.isAdmin = false
     authStore.isSimpleMode = false
     appStore.publicSettingsLoaded = false
+    appStore.backendModeEnabled = false
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
+  })
+
+  it('allows anonymous checkout recovery in backend mode without restoring a user session', async () => {
+    authStore.isAuthenticated = false
+    authStore.checkAuth.mockClear()
+    appStore.backendModeEnabled = true
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = { payment_enabled: false }
+    const next = vi.fn()
+    await routerHarness.guard!({ name: CHECKOUT_ORDER_ROUTE, path: '/payment/checkout/0123456789abcdef0123456789abcdef', params: {}, meta: {} }, {}, next)
+    expect(next).toHaveBeenCalledWith()
+    expect(authStore.checkAuth).not.toHaveBeenCalled()
+    expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
   })
 
   it('waits for the first public-settings request before deciding payment access', async () => {

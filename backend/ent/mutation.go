@@ -30294,6 +30294,12 @@ type PaymentOrderMutation struct {
 	provider_instance_id     *string
 	provider_key             *string
 	provider_snapshot        *map[string]interface{}
+	checkout_key_hash        *string
+	checkout_request_hash    *string
+	checkout_plan_name       *string
+	checkout_plan_currency   *string
+	checkout_started_at      *time.Time
+	checkout_reconciled_at   *time.Time
 	status                   *string
 	refund_amount            *float64
 	addrefund_amount         *float64
@@ -31484,6 +31490,300 @@ func (m *PaymentOrderMutation) ResetProviderSnapshot() {
 	delete(m.clearedFields, paymentorder.FieldProviderSnapshot)
 }
 
+// SetCheckoutKeyHash sets the "checkout_key_hash" field.
+func (m *PaymentOrderMutation) SetCheckoutKeyHash(s string) {
+	m.checkout_key_hash = &s
+}
+
+// CheckoutKeyHash returns the value of the "checkout_key_hash" field in the mutation.
+func (m *PaymentOrderMutation) CheckoutKeyHash() (r string, exists bool) {
+	v := m.checkout_key_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCheckoutKeyHash returns the old "checkout_key_hash" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCheckoutKeyHash(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCheckoutKeyHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCheckoutKeyHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCheckoutKeyHash: %w", err)
+	}
+	return oldValue.CheckoutKeyHash, nil
+}
+
+// ClearCheckoutKeyHash clears the value of the "checkout_key_hash" field.
+func (m *PaymentOrderMutation) ClearCheckoutKeyHash() {
+	m.checkout_key_hash = nil
+	m.clearedFields[paymentorder.FieldCheckoutKeyHash] = struct{}{}
+}
+
+// CheckoutKeyHashCleared returns if the "checkout_key_hash" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CheckoutKeyHashCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCheckoutKeyHash]
+	return ok
+}
+
+// ResetCheckoutKeyHash resets all changes to the "checkout_key_hash" field.
+func (m *PaymentOrderMutation) ResetCheckoutKeyHash() {
+	m.checkout_key_hash = nil
+	delete(m.clearedFields, paymentorder.FieldCheckoutKeyHash)
+}
+
+// SetCheckoutRequestHash sets the "checkout_request_hash" field.
+func (m *PaymentOrderMutation) SetCheckoutRequestHash(s string) {
+	m.checkout_request_hash = &s
+}
+
+// CheckoutRequestHash returns the value of the "checkout_request_hash" field in the mutation.
+func (m *PaymentOrderMutation) CheckoutRequestHash() (r string, exists bool) {
+	v := m.checkout_request_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCheckoutRequestHash returns the old "checkout_request_hash" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCheckoutRequestHash(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCheckoutRequestHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCheckoutRequestHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCheckoutRequestHash: %w", err)
+	}
+	return oldValue.CheckoutRequestHash, nil
+}
+
+// ClearCheckoutRequestHash clears the value of the "checkout_request_hash" field.
+func (m *PaymentOrderMutation) ClearCheckoutRequestHash() {
+	m.checkout_request_hash = nil
+	m.clearedFields[paymentorder.FieldCheckoutRequestHash] = struct{}{}
+}
+
+// CheckoutRequestHashCleared returns if the "checkout_request_hash" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CheckoutRequestHashCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCheckoutRequestHash]
+	return ok
+}
+
+// ResetCheckoutRequestHash resets all changes to the "checkout_request_hash" field.
+func (m *PaymentOrderMutation) ResetCheckoutRequestHash() {
+	m.checkout_request_hash = nil
+	delete(m.clearedFields, paymentorder.FieldCheckoutRequestHash)
+}
+
+// SetCheckoutPlanName sets the "checkout_plan_name" field.
+func (m *PaymentOrderMutation) SetCheckoutPlanName(s string) {
+	m.checkout_plan_name = &s
+}
+
+// CheckoutPlanName returns the value of the "checkout_plan_name" field in the mutation.
+func (m *PaymentOrderMutation) CheckoutPlanName() (r string, exists bool) {
+	v := m.checkout_plan_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCheckoutPlanName returns the old "checkout_plan_name" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCheckoutPlanName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCheckoutPlanName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCheckoutPlanName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCheckoutPlanName: %w", err)
+	}
+	return oldValue.CheckoutPlanName, nil
+}
+
+// ClearCheckoutPlanName clears the value of the "checkout_plan_name" field.
+func (m *PaymentOrderMutation) ClearCheckoutPlanName() {
+	m.checkout_plan_name = nil
+	m.clearedFields[paymentorder.FieldCheckoutPlanName] = struct{}{}
+}
+
+// CheckoutPlanNameCleared returns if the "checkout_plan_name" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CheckoutPlanNameCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCheckoutPlanName]
+	return ok
+}
+
+// ResetCheckoutPlanName resets all changes to the "checkout_plan_name" field.
+func (m *PaymentOrderMutation) ResetCheckoutPlanName() {
+	m.checkout_plan_name = nil
+	delete(m.clearedFields, paymentorder.FieldCheckoutPlanName)
+}
+
+// SetCheckoutPlanCurrency sets the "checkout_plan_currency" field.
+func (m *PaymentOrderMutation) SetCheckoutPlanCurrency(s string) {
+	m.checkout_plan_currency = &s
+}
+
+// CheckoutPlanCurrency returns the value of the "checkout_plan_currency" field in the mutation.
+func (m *PaymentOrderMutation) CheckoutPlanCurrency() (r string, exists bool) {
+	v := m.checkout_plan_currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCheckoutPlanCurrency returns the old "checkout_plan_currency" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCheckoutPlanCurrency(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCheckoutPlanCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCheckoutPlanCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCheckoutPlanCurrency: %w", err)
+	}
+	return oldValue.CheckoutPlanCurrency, nil
+}
+
+// ClearCheckoutPlanCurrency clears the value of the "checkout_plan_currency" field.
+func (m *PaymentOrderMutation) ClearCheckoutPlanCurrency() {
+	m.checkout_plan_currency = nil
+	m.clearedFields[paymentorder.FieldCheckoutPlanCurrency] = struct{}{}
+}
+
+// CheckoutPlanCurrencyCleared returns if the "checkout_plan_currency" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CheckoutPlanCurrencyCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCheckoutPlanCurrency]
+	return ok
+}
+
+// ResetCheckoutPlanCurrency resets all changes to the "checkout_plan_currency" field.
+func (m *PaymentOrderMutation) ResetCheckoutPlanCurrency() {
+	m.checkout_plan_currency = nil
+	delete(m.clearedFields, paymentorder.FieldCheckoutPlanCurrency)
+}
+
+// SetCheckoutStartedAt sets the "checkout_started_at" field.
+func (m *PaymentOrderMutation) SetCheckoutStartedAt(t time.Time) {
+	m.checkout_started_at = &t
+}
+
+// CheckoutStartedAt returns the value of the "checkout_started_at" field in the mutation.
+func (m *PaymentOrderMutation) CheckoutStartedAt() (r time.Time, exists bool) {
+	v := m.checkout_started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCheckoutStartedAt returns the old "checkout_started_at" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCheckoutStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCheckoutStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCheckoutStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCheckoutStartedAt: %w", err)
+	}
+	return oldValue.CheckoutStartedAt, nil
+}
+
+// ClearCheckoutStartedAt clears the value of the "checkout_started_at" field.
+func (m *PaymentOrderMutation) ClearCheckoutStartedAt() {
+	m.checkout_started_at = nil
+	m.clearedFields[paymentorder.FieldCheckoutStartedAt] = struct{}{}
+}
+
+// CheckoutStartedAtCleared returns if the "checkout_started_at" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CheckoutStartedAtCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCheckoutStartedAt]
+	return ok
+}
+
+// ResetCheckoutStartedAt resets all changes to the "checkout_started_at" field.
+func (m *PaymentOrderMutation) ResetCheckoutStartedAt() {
+	m.checkout_started_at = nil
+	delete(m.clearedFields, paymentorder.FieldCheckoutStartedAt)
+}
+
+// SetCheckoutReconciledAt sets the "checkout_reconciled_at" field.
+func (m *PaymentOrderMutation) SetCheckoutReconciledAt(t time.Time) {
+	m.checkout_reconciled_at = &t
+}
+
+// CheckoutReconciledAt returns the value of the "checkout_reconciled_at" field in the mutation.
+func (m *PaymentOrderMutation) CheckoutReconciledAt() (r time.Time, exists bool) {
+	v := m.checkout_reconciled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCheckoutReconciledAt returns the old "checkout_reconciled_at" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCheckoutReconciledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCheckoutReconciledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCheckoutReconciledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCheckoutReconciledAt: %w", err)
+	}
+	return oldValue.CheckoutReconciledAt, nil
+}
+
+// ClearCheckoutReconciledAt clears the value of the "checkout_reconciled_at" field.
+func (m *PaymentOrderMutation) ClearCheckoutReconciledAt() {
+	m.checkout_reconciled_at = nil
+	m.clearedFields[paymentorder.FieldCheckoutReconciledAt] = struct{}{}
+}
+
+// CheckoutReconciledAtCleared returns if the "checkout_reconciled_at" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CheckoutReconciledAtCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCheckoutReconciledAt]
+	return ok
+}
+
+// ResetCheckoutReconciledAt resets all changes to the "checkout_reconciled_at" field.
+func (m *PaymentOrderMutation) ResetCheckoutReconciledAt() {
+	m.checkout_reconciled_at = nil
+	delete(m.clearedFields, paymentorder.FieldCheckoutReconciledAt)
+}
+
 // SetStatus sets the "status" field.
 func (m *PaymentOrderMutation) SetStatus(s string) {
 	m.status = &s
@@ -32343,7 +32643,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 40)
+	fields := make([]string, 0, 46)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -32409,6 +32709,24 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.provider_snapshot != nil {
 		fields = append(fields, paymentorder.FieldProviderSnapshot)
+	}
+	if m.checkout_key_hash != nil {
+		fields = append(fields, paymentorder.FieldCheckoutKeyHash)
+	}
+	if m.checkout_request_hash != nil {
+		fields = append(fields, paymentorder.FieldCheckoutRequestHash)
+	}
+	if m.checkout_plan_name != nil {
+		fields = append(fields, paymentorder.FieldCheckoutPlanName)
+	}
+	if m.checkout_plan_currency != nil {
+		fields = append(fields, paymentorder.FieldCheckoutPlanCurrency)
+	}
+	if m.checkout_started_at != nil {
+		fields = append(fields, paymentorder.FieldCheckoutStartedAt)
+	}
+	if m.checkout_reconciled_at != nil {
+		fields = append(fields, paymentorder.FieldCheckoutReconciledAt)
 	}
 	if m.status != nil {
 		fields = append(fields, paymentorder.FieldStatus)
@@ -32516,6 +32834,18 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.ProviderKey()
 	case paymentorder.FieldProviderSnapshot:
 		return m.ProviderSnapshot()
+	case paymentorder.FieldCheckoutKeyHash:
+		return m.CheckoutKeyHash()
+	case paymentorder.FieldCheckoutRequestHash:
+		return m.CheckoutRequestHash()
+	case paymentorder.FieldCheckoutPlanName:
+		return m.CheckoutPlanName()
+	case paymentorder.FieldCheckoutPlanCurrency:
+		return m.CheckoutPlanCurrency()
+	case paymentorder.FieldCheckoutStartedAt:
+		return m.CheckoutStartedAt()
+	case paymentorder.FieldCheckoutReconciledAt:
+		return m.CheckoutReconciledAt()
 	case paymentorder.FieldStatus:
 		return m.Status()
 	case paymentorder.FieldRefundAmount:
@@ -32605,6 +32935,18 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldProviderKey(ctx)
 	case paymentorder.FieldProviderSnapshot:
 		return m.OldProviderSnapshot(ctx)
+	case paymentorder.FieldCheckoutKeyHash:
+		return m.OldCheckoutKeyHash(ctx)
+	case paymentorder.FieldCheckoutRequestHash:
+		return m.OldCheckoutRequestHash(ctx)
+	case paymentorder.FieldCheckoutPlanName:
+		return m.OldCheckoutPlanName(ctx)
+	case paymentorder.FieldCheckoutPlanCurrency:
+		return m.OldCheckoutPlanCurrency(ctx)
+	case paymentorder.FieldCheckoutStartedAt:
+		return m.OldCheckoutStartedAt(ctx)
+	case paymentorder.FieldCheckoutReconciledAt:
+		return m.OldCheckoutReconciledAt(ctx)
 	case paymentorder.FieldStatus:
 		return m.OldStatus(ctx)
 	case paymentorder.FieldRefundAmount:
@@ -32803,6 +33145,48 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetProviderSnapshot(v)
+		return nil
+	case paymentorder.FieldCheckoutKeyHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCheckoutKeyHash(v)
+		return nil
+	case paymentorder.FieldCheckoutRequestHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCheckoutRequestHash(v)
+		return nil
+	case paymentorder.FieldCheckoutPlanName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCheckoutPlanName(v)
+		return nil
+	case paymentorder.FieldCheckoutPlanCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCheckoutPlanCurrency(v)
+		return nil
+	case paymentorder.FieldCheckoutStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCheckoutStartedAt(v)
+		return nil
+	case paymentorder.FieldCheckoutReconciledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCheckoutReconciledAt(v)
 		return nil
 	case paymentorder.FieldStatus:
 		v, ok := value.(string)
@@ -33089,6 +33473,24 @@ func (m *PaymentOrderMutation) ClearedFields() []string {
 	if m.FieldCleared(paymentorder.FieldProviderSnapshot) {
 		fields = append(fields, paymentorder.FieldProviderSnapshot)
 	}
+	if m.FieldCleared(paymentorder.FieldCheckoutKeyHash) {
+		fields = append(fields, paymentorder.FieldCheckoutKeyHash)
+	}
+	if m.FieldCleared(paymentorder.FieldCheckoutRequestHash) {
+		fields = append(fields, paymentorder.FieldCheckoutRequestHash)
+	}
+	if m.FieldCleared(paymentorder.FieldCheckoutPlanName) {
+		fields = append(fields, paymentorder.FieldCheckoutPlanName)
+	}
+	if m.FieldCleared(paymentorder.FieldCheckoutPlanCurrency) {
+		fields = append(fields, paymentorder.FieldCheckoutPlanCurrency)
+	}
+	if m.FieldCleared(paymentorder.FieldCheckoutStartedAt) {
+		fields = append(fields, paymentorder.FieldCheckoutStartedAt)
+	}
+	if m.FieldCleared(paymentorder.FieldCheckoutReconciledAt) {
+		fields = append(fields, paymentorder.FieldCheckoutReconciledAt)
+	}
 	if m.FieldCleared(paymentorder.FieldRefundReason) {
 		fields = append(fields, paymentorder.FieldRefundReason)
 	}
@@ -33162,6 +33564,24 @@ func (m *PaymentOrderMutation) ClearField(name string) error {
 		return nil
 	case paymentorder.FieldProviderSnapshot:
 		m.ClearProviderSnapshot()
+		return nil
+	case paymentorder.FieldCheckoutKeyHash:
+		m.ClearCheckoutKeyHash()
+		return nil
+	case paymentorder.FieldCheckoutRequestHash:
+		m.ClearCheckoutRequestHash()
+		return nil
+	case paymentorder.FieldCheckoutPlanName:
+		m.ClearCheckoutPlanName()
+		return nil
+	case paymentorder.FieldCheckoutPlanCurrency:
+		m.ClearCheckoutPlanCurrency()
+		return nil
+	case paymentorder.FieldCheckoutStartedAt:
+		m.ClearCheckoutStartedAt()
+		return nil
+	case paymentorder.FieldCheckoutReconciledAt:
+		m.ClearCheckoutReconciledAt()
 		return nil
 	case paymentorder.FieldRefundReason:
 		m.ClearRefundReason()
@@ -33266,6 +33686,24 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldProviderSnapshot:
 		m.ResetProviderSnapshot()
+		return nil
+	case paymentorder.FieldCheckoutKeyHash:
+		m.ResetCheckoutKeyHash()
+		return nil
+	case paymentorder.FieldCheckoutRequestHash:
+		m.ResetCheckoutRequestHash()
+		return nil
+	case paymentorder.FieldCheckoutPlanName:
+		m.ResetCheckoutPlanName()
+		return nil
+	case paymentorder.FieldCheckoutPlanCurrency:
+		m.ResetCheckoutPlanCurrency()
+		return nil
+	case paymentorder.FieldCheckoutStartedAt:
+		m.ResetCheckoutStartedAt()
+		return nil
+	case paymentorder.FieldCheckoutReconciledAt:
+		m.ResetCheckoutReconciledAt()
 		return nil
 	case paymentorder.FieldStatus:
 		m.ResetStatus()

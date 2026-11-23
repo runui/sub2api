@@ -22,6 +22,10 @@ func (s *PaymentService) GetPublicOrderByResumeToken(ctx context.Context, token 
 		}
 		return nil, fmt.Errorf("get order by resume token: %w", err)
 	}
+	return s.resolveResumeOrder(ctx, order, claims)
+}
+
+func (s *PaymentService) resolveResumeOrder(ctx context.Context, order *dbent.PaymentOrder, claims *ResumeTokenClaims) (*dbent.PaymentOrder, error) {
 	if claims.UserID > 0 && order.UserID != claims.UserID {
 		return nil, invalidResumeTokenMatchError()
 	}
@@ -48,10 +52,11 @@ func (s *PaymentService) GetPublicOrderByResumeToken(ctx context.Context, token 
 	if order.Status == OrderStatusPending || order.Status == OrderStatusExpired {
 		result := s.reconcilePaid(ctx, order)
 		if result == checkPaidResultAlreadyPaid {
-			order, err = s.entClient.PaymentOrder.Get(ctx, order.ID)
+			order, err := s.entClient.PaymentOrder.Get(ctx, order.ID)
 			if err != nil {
 				return nil, fmt.Errorf("reload order by resume token: %w", err)
 			}
+			return order, nil
 		}
 	}
 

@@ -46,7 +46,7 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.Float("amount").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}),
 		field.Float("pay_amount").
-			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}),
+			SchemaType(map[string]string{dialect.Postgres: "decimal(21,3)"}),
 		field.Float("fee_rate").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(0),
@@ -102,6 +102,14 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.JSON("provider_snapshot", map[string]any{}).
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.String("checkout_key_hash").Optional().Nillable().Immutable().Sensitive().MaxLen(64),
+		field.String("checkout_request_hash").Optional().Nillable().Immutable().Sensitive().MaxLen(64),
+		field.String("checkout_plan_name").Optional().Nillable().Immutable().MaxLen(100),
+		field.String("checkout_plan_currency").Optional().Nillable().Immutable().MaxLen(3),
+		field.Time("checkout_started_at").Optional().Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Time("checkout_reconciled_at").Optional().Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 
 		// 状态
 		field.String("status").
@@ -110,7 +118,7 @@ func (PaymentOrder) Fields() []ent.Field {
 
 		// 退款信息
 		field.Float("refund_amount").
-			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}).
+			SchemaType(map[string]string{dialect.Postgres: "decimal(21,3)"}).
 			Default(0),
 		field.String("refund_reason").
 			Optional().
@@ -193,6 +201,8 @@ func (PaymentOrder) Indexes() []ent.Index {
 			Unique().
 			Annotations(entsql.IndexWhere("out_trade_no <> ''")),
 		index.Fields("user_id"),
+		index.Fields("user_id", "checkout_key_hash").Unique(),
+		index.Fields("checkout_started_at").Annotations(entsql.IndexWhere("checkout_started_at IS NOT NULL")),
 		index.Fields("status"),
 		index.Fields("expires_at"),
 		index.Fields("created_at"),

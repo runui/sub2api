@@ -110,7 +110,10 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 			truncatedBody = truncatedBody[:webhookLogTruncateLen] + "...(truncated)"
 		}
 		slog.Error("[Payment Webhook] verify failed", "provider", providerKey, "error", err, "method", c.Request.Method, "bodyLen", len(rawBody))
-		slog.Debug("[Payment Webhook] verify failed body", "provider", providerKey, "rawBody", truncatedBody)
+		// SDK-based gateways may include per-payment client secrets in the body.
+		if providerKey != payment.TypeStripe && providerKey != payment.TypeAirwallex {
+			slog.Debug("[Payment Webhook] verify failed body", "provider", providerKey, "rawBody", truncatedBody)
+		}
 		c.String(http.StatusBadRequest, "verify failed")
 		return
 	}
@@ -161,6 +164,18 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err == nil {
 			return values.Get("out_trade_no")
 		}
+	case payment.TypeStripe:
+		var payload struct {
+			Data struct {
+				Object struct {
+					Metadata map[string]string `json:"metadata"`
+				} `json:"object"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
+			// Routing hint only; the pinned instance still verifies the signature.
+			return strings.TrimSpace(payload.Data.Object.Metadata["orderId"])
+		}
 	case payment.TypeAirwallex:
 		var payload struct {
 			Data struct {
@@ -173,8 +188,7 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 			return strings.TrimSpace(payload.Data.Object.MerchantOrderID)
 		}
 	}
-	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
-	// typically has only one instance, so no instance lookup is needed.
+	// WeChat's order reference is inside the encrypted resource.
 	return ""
 }
 

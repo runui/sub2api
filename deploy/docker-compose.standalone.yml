@@ -83,6 +83,9 @@ services:
       # =======================================================================
       - JWT_SECRET=${JWT_SECRET:-}
       - JWT_EXPIRE_HOUR=${JWT_EXPIRE_HOUR:-24}
+      - CHECKOUT_PUBLIC_URL=${CHECKOUT_PUBLIC_URL:-}
+      - CHECKOUT_CLIENT_RETURN_URL=${CHECKOUT_CLIENT_RETURN_URL:-}
+      - CHECKOUT_DISABLE_NEW_ORDERS=${CHECKOUT_DISABLE_NEW_ORDERS:-false}
 
       # =======================================================================
       # Setup Configuration

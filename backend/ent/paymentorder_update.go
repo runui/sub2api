@@ -438,6 +438,46 @@ func (_u *PaymentOrderUpdate) ClearProviderSnapshot() *PaymentOrderUpdate {
 	return _u
 }
 
+// SetCheckoutStartedAt sets the "checkout_started_at" field.
+func (_u *PaymentOrderUpdate) SetCheckoutStartedAt(v time.Time) *PaymentOrderUpdate {
+	_u.mutation.SetCheckoutStartedAt(v)
+	return _u
+}
+
+// SetNillableCheckoutStartedAt sets the "checkout_started_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCheckoutStartedAt(v *time.Time) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCheckoutStartedAt(*v)
+	}
+	return _u
+}
+
+// ClearCheckoutStartedAt clears the value of the "checkout_started_at" field.
+func (_u *PaymentOrderUpdate) ClearCheckoutStartedAt() *PaymentOrderUpdate {
+	_u.mutation.ClearCheckoutStartedAt()
+	return _u
+}
+
+// SetCheckoutReconciledAt sets the "checkout_reconciled_at" field.
+func (_u *PaymentOrderUpdate) SetCheckoutReconciledAt(v time.Time) *PaymentOrderUpdate {
+	_u.mutation.SetCheckoutReconciledAt(v)
+	return _u
+}
+
+// SetNillableCheckoutReconciledAt sets the "checkout_reconciled_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCheckoutReconciledAt(v *time.Time) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCheckoutReconciledAt(*v)
+	}
+	return _u
+}
+
+// ClearCheckoutReconciledAt clears the value of the "checkout_reconciled_at" field.
+func (_u *PaymentOrderUpdate) ClearCheckoutReconciledAt() *PaymentOrderUpdate {
+	_u.mutation.ClearCheckoutReconciledAt()
+	return _u
+}
+
 // SetStatus sets the "status" field.
 func (_u *PaymentOrderUpdate) SetStatus(v string) *PaymentOrderUpdate {
 	_u.mutation.SetStatus(v)
@@ -986,6 +1026,30 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	if _u.mutation.ProviderSnapshotCleared() {
 		_spec.ClearField(paymentorder.FieldProviderSnapshot, field.TypeJSON)
 	}
+	if _u.mutation.CheckoutKeyHashCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutKeyHash, field.TypeString)
+	}
+	if _u.mutation.CheckoutRequestHashCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutRequestHash, field.TypeString)
+	}
+	if _u.mutation.CheckoutPlanNameCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutPlanName, field.TypeString)
+	}
+	if _u.mutation.CheckoutPlanCurrencyCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutPlanCurrency, field.TypeString)
+	}
+	if value, ok := _u.mutation.CheckoutStartedAt(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutStartedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CheckoutStartedAtCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutStartedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CheckoutReconciledAt(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutReconciledAt, field.TypeTime, value)
+	}
+	if _u.mutation.CheckoutReconciledAtCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutReconciledAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(paymentorder.FieldStatus, field.TypeString, value)
 	}
@@ -1525,6 +1589,46 @@ func (_u *PaymentOrderUpdateOne) SetProviderSnapshot(v map[string]interface{}) *
 // ClearProviderSnapshot clears the value of the "provider_snapshot" field.
 func (_u *PaymentOrderUpdateOne) ClearProviderSnapshot() *PaymentOrderUpdateOne {
 	_u.mutation.ClearProviderSnapshot()
+	return _u
+}
+
+// SetCheckoutStartedAt sets the "checkout_started_at" field.
+func (_u *PaymentOrderUpdateOne) SetCheckoutStartedAt(v time.Time) *PaymentOrderUpdateOne {
+	_u.mutation.SetCheckoutStartedAt(v)
+	return _u
+}
+
+// SetNillableCheckoutStartedAt sets the "checkout_started_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCheckoutStartedAt(v *time.Time) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCheckoutStartedAt(*v)
+	}
+	return _u
+}
+
+// ClearCheckoutStartedAt clears the value of the "checkout_started_at" field.
+func (_u *PaymentOrderUpdateOne) ClearCheckoutStartedAt() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCheckoutStartedAt()
+	return _u
+}
+
+// SetCheckoutReconciledAt sets the "checkout_reconciled_at" field.
+func (_u *PaymentOrderUpdateOne) SetCheckoutReconciledAt(v time.Time) *PaymentOrderUpdateOne {
+	_u.mutation.SetCheckoutReconciledAt(v)
+	return _u
+}
+
+// SetNillableCheckoutReconciledAt sets the "checkout_reconciled_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCheckoutReconciledAt(v *time.Time) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCheckoutReconciledAt(*v)
+	}
+	return _u
+}
+
+// ClearCheckoutReconciledAt clears the value of the "checkout_reconciled_at" field.
+func (_u *PaymentOrderUpdateOne) ClearCheckoutReconciledAt() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCheckoutReconciledAt()
 	return _u
 }
 
@@ -2105,6 +2209,30 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if _u.mutation.ProviderSnapshotCleared() {
 		_spec.ClearField(paymentorder.FieldProviderSnapshot, field.TypeJSON)
+	}
+	if _u.mutation.CheckoutKeyHashCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutKeyHash, field.TypeString)
+	}
+	if _u.mutation.CheckoutRequestHashCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutRequestHash, field.TypeString)
+	}
+	if _u.mutation.CheckoutPlanNameCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutPlanName, field.TypeString)
+	}
+	if _u.mutation.CheckoutPlanCurrencyCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutPlanCurrency, field.TypeString)
+	}
+	if value, ok := _u.mutation.CheckoutStartedAt(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutStartedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CheckoutStartedAtCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutStartedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CheckoutReconciledAt(); ok {
+		_spec.SetField(paymentorder.FieldCheckoutReconciledAt, field.TypeTime, value)
+	}
+	if _u.mutation.CheckoutReconciledAtCleared() {
+		_spec.ClearField(paymentorder.FieldCheckoutReconciledAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(paymentorder.FieldStatus, field.TypeString, value)

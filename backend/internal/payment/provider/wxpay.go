@@ -3,6 +3,7 @@ package provider
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -194,12 +195,21 @@ func (w *Wxpay) CreatePayment(ctx context.Context, req payment.CreatePaymentRequ
 	case wxpayModeJSAPI:
 		return w.prepayJSAPI(ctx, client, req, notifyURL, totalFen)
 	case wxpayModeH5:
-		return w.prepayH5(ctx, client, req, notifyURL, totalFen)
+		result, err := w.prepayH5(ctx, client, req, notifyURL, totalFen)
+		if req.WxpayNativeOnH5NotAuthorized && wxpayH5NotAuthorized(err) {
+			return w.prepayNative(ctx, client, req, notifyURL, totalFen)
+		}
+		return result, err
 	case wxpayModeNative:
 		return w.prepayNative(ctx, client, req, notifyURL, totalFen)
 	default:
 		return nil, fmt.Errorf("wxpay create payment: unsupported mode %q", mode)
 	}
+}
+
+func wxpayH5NotAuthorized(err error) bool {
+	var apiErr *core.APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden && apiErr.Code == "NO_AUTH"
 }
 
 func (w *Wxpay) prepayJSAPI(ctx context.Context, c *core.Client, req payment.CreatePaymentRequest, notifyURL string, totalFen int64) (*payment.CreatePaymentResponse, error) {
@@ -211,6 +221,7 @@ func (w *Wxpay) prepayJSAPI(ctx context.Context, c *core.Client, req payment.Cre
 		Mchid:       core.String(w.config["mchId"]),
 		Description: core.String(req.Subject),
 		OutTradeNo:  core.String(req.OrderID),
+		TimeExpire:  req.ExpiresAt,
 		NotifyUrl:   core.String(notifyURL),
 		Amount:      &jsapi.Amount{Total: core.Int64(totalFen), Currency: &cur},
 		Payer:       &jsapi.Payer{Openid: core.String(strings.TrimSpace(req.OpenID))},
@@ -242,8 +253,9 @@ func (w *Wxpay) prepayNative(ctx context.Context, c *core.Client, req payment.Cr
 	resp, _, err := wxpayNativePrepay(ctx, svc, native.PrepayRequest{
 		Appid: core.String(w.config["appId"]), Mchid: core.String(w.config["mchId"]),
 		Description: core.String(req.Subject), OutTradeNo: core.String(req.OrderID),
-		NotifyUrl: core.String(notifyURL),
-		Amount:    &native.Amount{Total: core.Int64(totalFen), Currency: &cur},
+		TimeExpire: req.ExpiresAt,
+		NotifyUrl:  core.String(notifyURL),
+		Amount:     &native.Amount{Total: core.Int64(totalFen), Currency: &cur},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("wxpay native prepay: %w", err)
@@ -261,9 +273,10 @@ func (w *Wxpay) prepayH5(ctx context.Context, c *core.Client, req payment.Create
 	resp, _, err := wxpayH5Prepay(ctx, svc, h5.PrepayRequest{
 		Appid: core.String(w.config["appId"]), Mchid: core.String(w.config["mchId"]),
 		Description: core.String(req.Subject), OutTradeNo: core.String(req.OrderID),
-		NotifyUrl: core.String(notifyURL),
-		Amount:    &h5.Amount{Total: core.Int64(totalFen), Currency: &cur},
-		SceneInfo: &h5.SceneInfo{PayerClientIp: core.String(req.ClientIP), H5Info: buildWxpayH5Info(w.config)},
+		TimeExpire: req.ExpiresAt,
+		NotifyUrl:  core.String(notifyURL),
+		Amount:     &h5.Amount{Total: core.Int64(totalFen), Currency: &cur},
+		SceneInfo:  &h5.SceneInfo{PayerClientIp: core.String(req.ClientIP), H5Info: buildWxpayH5Info(w.config)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("wxpay h5 prepay: %w", err)
@@ -416,6 +429,7 @@ func (w *Wxpay) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryO
 	return &payment.QueryOrderResponse{
 		TradeNo:  id,
 		Status:   mapWxState(wxSV(tx.TradeState)),
+		Closed:   wxSV(tx.TradeState) == wxpayTradeStateClosed,
 		Amount:   amt,
 		PaidAt:   pa,
 		Metadata: buildWxpayTransactionMetadata(tx),

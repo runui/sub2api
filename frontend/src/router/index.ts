@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { CHECKOUT_ORDER_ROUTE, isPublicCheckoutRoute } from './checkoutRoutes'
 
 /**
  * Route definitions with lazy loading
@@ -348,6 +349,12 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'nav.myOrders',
       requiresPayment: true
     }
+  },
+  {
+    path: '/payment/checkout/:orderId([a-f0-9]{32})',
+    name: CHECKOUT_ORDER_ROUTE,
+    component: () => import('@/views/public/CheckoutOrderView.vue'),
+    meta: { requiresAuth: false, title: 'Checkout', titleKey: 'payment.checkout.title' },
   },
   {
     path: '/payment/qrcode',
@@ -752,6 +759,8 @@ const routes: RouteRecordRaw[] = [
 /**
  * Create router instance
  */
+// Strip the fragment before Vue Router snapshots the initial browser URL.
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
@@ -805,6 +814,14 @@ function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: bo
 router.beforeEach(async (to, _from, next) => {
   // 开始导航加载状态
   navigationLoading.startNavigation()
+
+  if (isPublicCheckoutRoute(to.name)) {
+    // Checkout remains public even in backend mode. The API limits it to checkout orders.
+    const appStore = useAppStore()
+    document.title = resolveRouteDocumentTitle(to, appStore.siteName)
+    next()
+    return
+  }
 
   const authStore = useAuthStore()
 
@@ -1008,6 +1025,7 @@ router.beforeEach(async (to, _from, next) => {
 router.afterEach((to) => {
   // 结束导航加载状态
   navigationLoading.endNavigation()
+  if (isPublicCheckoutRoute(to.name)) return
 
   // 懒初始化预加载（首次导航时创建，传入 router 实例）
   if (!routePrefetch) {

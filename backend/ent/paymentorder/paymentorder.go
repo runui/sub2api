@@ -58,6 +58,18 @@ const (
 	FieldProviderKey = "provider_key"
 	// FieldProviderSnapshot holds the string denoting the provider_snapshot field in the database.
 	FieldProviderSnapshot = "provider_snapshot"
+	// FieldCheckoutKeyHash holds the string denoting the checkout_key_hash field in the database.
+	FieldCheckoutKeyHash = "checkout_key_hash"
+	// FieldCheckoutRequestHash holds the string denoting the checkout_request_hash field in the database.
+	FieldCheckoutRequestHash = "checkout_request_hash"
+	// FieldCheckoutPlanName holds the string denoting the checkout_plan_name field in the database.
+	FieldCheckoutPlanName = "checkout_plan_name"
+	// FieldCheckoutPlanCurrency holds the string denoting the checkout_plan_currency field in the database.
+	FieldCheckoutPlanCurrency = "checkout_plan_currency"
+	// FieldCheckoutStartedAt holds the string denoting the checkout_started_at field in the database.
+	FieldCheckoutStartedAt = "checkout_started_at"
+	// FieldCheckoutReconciledAt holds the string denoting the checkout_reconciled_at field in the database.
+	FieldCheckoutReconciledAt = "checkout_reconciled_at"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldRefundAmount holds the string denoting the refund_amount field in the database.
@@ -132,6 +144,12 @@ var Columns = []string{
 	FieldProviderInstanceID,
 	FieldProviderKey,
 	FieldProviderSnapshot,
+	FieldCheckoutKeyHash,
+	FieldCheckoutRequestHash,
+	FieldCheckoutPlanName,
+	FieldCheckoutPlanCurrency,
+	FieldCheckoutStartedAt,
+	FieldCheckoutReconciledAt,
 	FieldStatus,
 	FieldRefundAmount,
 	FieldRefundReason,
@@ -189,6 +207,14 @@ var (
 	ProviderInstanceIDValidator func(string) error
 	// ProviderKeyValidator is a validator for the "provider_key" field. It is called by the builders before save.
 	ProviderKeyValidator func(string) error
+	// CheckoutKeyHashValidator is a validator for the "checkout_key_hash" field. It is called by the builders before save.
+	CheckoutKeyHashValidator func(string) error
+	// CheckoutRequestHashValidator is a validator for the "checkout_request_hash" field. It is called by the builders before save.
+	CheckoutRequestHashValidator func(string) error
+	// CheckoutPlanNameValidator is a validator for the "checkout_plan_name" field. It is called by the builders before save.
+	CheckoutPlanNameValidator func(string) error
+	// CheckoutPlanCurrencyValidator is a validator for the "checkout_plan_currency" field. It is called by the builders before save.
+	CheckoutPlanCurrencyValidator func(string) error
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
@@ -322,6 +348,36 @@ func ByProviderInstanceID(opts ...sql.OrderTermOption) OrderOption {
 // ByProviderKey orders the results by the provider_key field.
 func ByProviderKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProviderKey, opts...).ToFunc()
+}
+
+// ByCheckoutKeyHash orders the results by the checkout_key_hash field.
+func ByCheckoutKeyHash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCheckoutKeyHash, opts...).ToFunc()
+}
+
+// ByCheckoutRequestHash orders the results by the checkout_request_hash field.
+func ByCheckoutRequestHash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCheckoutRequestHash, opts...).ToFunc()
+}
+
+// ByCheckoutPlanName orders the results by the checkout_plan_name field.
+func ByCheckoutPlanName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCheckoutPlanName, opts...).ToFunc()
+}
+
+// ByCheckoutPlanCurrency orders the results by the checkout_plan_currency field.
+func ByCheckoutPlanCurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCheckoutPlanCurrency, opts...).ToFunc()
+}
+
+// ByCheckoutStartedAt orders the results by the checkout_started_at field.
+func ByCheckoutStartedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCheckoutStartedAt, opts...).ToFunc()
+}
+
+// ByCheckoutReconciledAt orders the results by the checkout_reconciled_at field.
+func ByCheckoutReconciledAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCheckoutReconciledAt, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

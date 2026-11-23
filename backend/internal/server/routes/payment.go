@@ -69,6 +69,7 @@ func RegisterPaymentRoutes(
 	// user who is mid-payment from seeing their result.
 	publicRateLimiter := ratelimit.NewRateLimiter(redisClient)
 	public := v1.Group("/payment/public")
+	registerCheckoutRoutes(authenticated, public, paymentHandler, publicRateLimiter)
 	{
 		public.POST("/orders/verify",
 			publicRateLimiter.Limit("payment-public-order-verify", publicOrderVerifyRateLimit, publicOrderVerifyRateLimitWindow),

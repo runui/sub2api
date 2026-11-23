@@ -63,6 +63,18 @@ type PaymentOrder struct {
 	ProviderKey *string `json:"provider_key,omitempty"`
 	// ProviderSnapshot holds the value of the "provider_snapshot" field.
 	ProviderSnapshot map[string]interface{} `json:"provider_snapshot,omitempty"`
+	// CheckoutKeyHash holds the value of the "checkout_key_hash" field.
+	CheckoutKeyHash *string `json:"-"`
+	// CheckoutRequestHash holds the value of the "checkout_request_hash" field.
+	CheckoutRequestHash *string `json:"-"`
+	// CheckoutPlanName holds the value of the "checkout_plan_name" field.
+	CheckoutPlanName *string `json:"checkout_plan_name,omitempty"`
+	// CheckoutPlanCurrency holds the value of the "checkout_plan_currency" field.
+	CheckoutPlanCurrency *string `json:"checkout_plan_currency,omitempty"`
+	// CheckoutStartedAt holds the value of the "checkout_started_at" field.
+	CheckoutStartedAt *time.Time `json:"checkout_started_at,omitempty"`
+	// CheckoutReconciledAt holds the value of the "checkout_reconciled_at" field.
+	CheckoutReconciledAt *time.Time `json:"checkout_reconciled_at,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// RefundAmount holds the value of the "refund_amount" field.
@@ -138,9 +150,9 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
-		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
+		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldCheckoutKeyHash, paymentorder.FieldCheckoutRequestHash, paymentorder.FieldCheckoutPlanName, paymentorder.FieldCheckoutPlanCurrency, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
-		case paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
+		case paymentorder.FieldCheckoutStartedAt, paymentorder.FieldCheckoutReconciledAt, paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -305,6 +317,48 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &_m.ProviderSnapshot); err != nil {
 					return fmt.Errorf("unmarshal field provider_snapshot: %w", err)
 				}
+			}
+		case paymentorder.FieldCheckoutKeyHash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field checkout_key_hash", values[i])
+			} else if value.Valid {
+				_m.CheckoutKeyHash = new(string)
+				*_m.CheckoutKeyHash = value.String
+			}
+		case paymentorder.FieldCheckoutRequestHash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field checkout_request_hash", values[i])
+			} else if value.Valid {
+				_m.CheckoutRequestHash = new(string)
+				*_m.CheckoutRequestHash = value.String
+			}
+		case paymentorder.FieldCheckoutPlanName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field checkout_plan_name", values[i])
+			} else if value.Valid {
+				_m.CheckoutPlanName = new(string)
+				*_m.CheckoutPlanName = value.String
+			}
+		case paymentorder.FieldCheckoutPlanCurrency:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field checkout_plan_currency", values[i])
+			} else if value.Valid {
+				_m.CheckoutPlanCurrency = new(string)
+				*_m.CheckoutPlanCurrency = value.String
+			}
+		case paymentorder.FieldCheckoutStartedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field checkout_started_at", values[i])
+			} else if value.Valid {
+				_m.CheckoutStartedAt = new(time.Time)
+				*_m.CheckoutStartedAt = value.Time
+			}
+		case paymentorder.FieldCheckoutReconciledAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field checkout_reconciled_at", values[i])
+			} else if value.Valid {
+				_m.CheckoutReconciledAt = new(time.Time)
+				*_m.CheckoutReconciledAt = value.Time
 			}
 		case paymentorder.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -548,6 +602,30 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("provider_snapshot=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ProviderSnapshot))
+	builder.WriteString(", ")
+	builder.WriteString("checkout_key_hash=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("checkout_request_hash=<sensitive>")
+	builder.WriteString(", ")
+	if v := _m.CheckoutPlanName; v != nil {
+		builder.WriteString("checkout_plan_name=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.CheckoutPlanCurrency; v != nil {
+		builder.WriteString("checkout_plan_currency=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.CheckoutStartedAt; v != nil {
+		builder.WriteString("checkout_started_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.CheckoutReconciledAt; v != nil {
+		builder.WriteString("checkout_reconciled_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)

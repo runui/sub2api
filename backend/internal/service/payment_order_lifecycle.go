@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
@@ -27,11 +29,14 @@ const (
 	checkPaidResultAlreadyPaid = "already_paid"
 	checkPaidResultCancelled   = "cancelled"
 
-	pendingPaymentReconcileLimit = 20
+	pendingPaymentReconcileLimit  = 20
+	checkoutPaymentRecoveryWindow = 24 * time.Hour
+	checkoutPaymentReconcileLimit = 20
 )
 
 type checkPaidOptions struct {
 	cancelIfUnpaid bool
+	requireClosed  bool
 }
 
 func (s *PaymentService) checkCancelRateLimit(ctx context.Context, userID int64, cfg *PaymentConfig) error {
@@ -122,9 +127,17 @@ func (s *PaymentService) AdminCancelOrder(ctx context.Context, orderID int64) (s
 }
 
 func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, fs, op, ad string) (string, error) {
+	if o.CheckoutStartedAt != nil && time.Since(*o.CheckoutStartedAt) < checkoutProviderTimeout+5*time.Second {
+		// Do not cancel/expire while the one create call may still be in flight.
+		return "", infraerrors.Conflict("CHECKOUT_PAYMENT_STARTING", "payment is starting; try again shortly")
+	}
 	if o.PaymentTradeNo != "" || o.PaymentType != "" {
-		if s.checkPaid(ctx, o) == checkPaidResultAlreadyPaid {
+		result := s.checkPaid(ctx, o)
+		if result == checkPaidResultAlreadyPaid {
 			return checkPaidResultAlreadyPaid, nil
+		}
+		if o.CheckoutStartedAt != nil && fs == OrderStatusCancelled && result != checkPaidResultCancelled {
+			return "", infraerrors.Conflict("CHECKOUT_CANCEL_UNCONFIRMED", "the payment provider has not confirmed cancellation")
 		}
 	}
 	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusPending)).SetStatus(fs).Save(ctx)
@@ -165,6 +178,9 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 		slog.Warn("query upstream failed", "orderID", o.ID, "error", err)
 		return ""
 	}
+	if resp == nil {
+		return ""
+	}
 	if resp.Status == payment.ProviderStatusPaid {
 		if !isValidProviderAmount(resp.Amount) {
 			s.writeAuditLog(ctx, o.ID, "PAYMENT_INVALID_AMOUNT", prov.ProviderKey(), map[string]any{
@@ -182,18 +198,28 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 		}
 		notificationTradeNo := o.PaymentTradeNo
 		if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
-			if _, updateErr := s.entClient.PaymentOrder.Update().
-				Where(paymentorder.IDEQ(o.ID)).
-				SetPaymentTradeNo(upstreamTradeNo).
-				Save(ctx); updateErr != nil {
-				slog.Error("persist upstream trade no during checkPaid failed", "orderID", o.ID, "tradeNo", upstreamTradeNo, "error", updateErr)
-			} else {
-				o.PaymentTradeNo = upstreamTradeNo
+			// For checkout, the payment transition stores the trade number. A
+			// reconciliation query must not overwrite a callback that already won.
+			if o.CheckoutStartedAt == nil {
+				if _, updateErr := s.entClient.PaymentOrder.Update().
+					Where(paymentorder.IDEQ(o.ID)).SetPaymentTradeNo(upstreamTradeNo).Save(ctx); updateErr != nil {
+					slog.Error("persist upstream trade no during checkPaid failed", "orderID", o.ID, "tradeNo", upstreamTradeNo, "error", updateErr)
+				} else {
+					o.PaymentTradeNo = upstreamTradeNo
+				}
 			}
 			notificationTradeNo = upstreamTradeNo
 		}
 		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
 			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
+			if o.CheckoutStartedAt != nil {
+				// An amount/identity mismatch does not establish a paid order.
+				// If failure came after toPaid, the persisted paid marker still wins.
+				current, loadErr := s.entClient.PaymentOrder.Get(ctx, o.ID)
+				if loadErr != nil || current.PaidAt == nil {
+					return ""
+				}
+			}
 			// Still return already_paid — order was paid, fulfillment can be retried
 		}
 		return checkPaidResultAlreadyPaid
@@ -201,10 +227,37 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 	if !opts.cancelIfUnpaid {
 		return ""
 	}
+	if opts.requireClosed {
+		if resp.Closed {
+			return checkPaidResultCancelled
+		}
+		if resp.Status != payment.ProviderStatusPending {
+			return ""
+		}
+		switch prov.ProviderKey() {
+		case payment.TypeAlipay:
+			if closer, ok := prov.(interface {
+				CloseCheckoutPayment(context.Context, string) error
+			}); ok && closer.CloseCheckoutPayment(ctx, queryRef) == nil {
+				return checkPaidResultCancelled
+			}
+		case payment.TypeWxpay:
+			if closer, ok := prov.(payment.CancelableProvider); ok && closer.CancelPayment(ctx, queryRef) == nil {
+				return checkPaidResultCancelled
+			}
+		}
+		return ""
+	}
+	if o.CheckoutStartedAt != nil && resp.Status == payment.ProviderStatusFailed {
+		return checkPaidResultCancelled
+	}
 	if cp, ok := prov.(payment.CancelableProvider); ok {
 		finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
-		_ = cp.CancelPayment(ctx, queryRef)
+		err := cp.CancelPayment(ctx, queryRef)
 		finishProviderCall()
+		if o.CheckoutStartedAt != nil && err == nil {
+			return checkPaidResultCancelled
+		}
 	}
 	return ""
 }
@@ -253,6 +306,11 @@ func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider
 	default:
 		if tradeNo := strings.TrimSpace(order.PaymentTradeNo); tradeNo != "" {
 			return tradeNo
+		}
+		if order.CheckoutStartedAt != nil {
+			// These providers require their own intent ID. Without it only a
+			// verified callback can resolve a charge; don't query a bogus ID.
+			return ""
 		}
 		return strings.TrimSpace(order.OutTradeNo)
 	}
@@ -311,6 +369,7 @@ func (s *PaymentService) ReconcilePendingPaymentOrders(ctx context.Context) (int
 		Where(
 			paymentorder.StatusEQ(OrderStatusPending),
 			paymentorder.ExpiresAtGT(now),
+			paymentorder.CheckoutStartedAtIsNil(),
 			paymentorder.Or(
 				paymentorder.PaymentTypeEQ(payment.TypeWxpay),
 				paymentorder.PaymentTypeHasPrefix(payment.TypeWxpay+"_"),
@@ -338,6 +397,59 @@ func (s *PaymentService) ReconcilePendingPaymentOrders(ctx context.Context) (int
 	return recovered, nil
 }
 
+func (s *PaymentService) reconcileRecentCheckoutOrders(ctx context.Context) (int, error) {
+	// Separate the bounded checkout queue from legacy pending work. Rotate
+	// unsuccessful queries to the back so older unpaid attempts cannot starve it.
+	now := time.Now()
+	recoverable := paymentorder.Or(
+		paymentorder.StatusIn(OrderStatusPending, OrderStatusExpired, OrderStatusCancelled),
+		paymentorder.And(paymentorder.PaidAtNotNil(), paymentorder.StatusIn(OrderStatusPaid, OrderStatusFailed, OrderStatusRecharging)),
+	)
+	orders, err := s.entClient.PaymentOrder.Query().Where(
+		paymentorder.CheckoutStartedAtGTE(now.Add(-checkoutPaymentRecoveryWindow)),
+		paymentorder.CheckoutStartedAtLTE(now.Add(-checkoutProviderTimeout)), recoverable,
+	).Order(paymentorder.ByCheckoutReconciledAt(entsql.OrderNullsFirst()), paymentorder.ByID()).
+		Limit(checkoutPaymentReconcileLimit).All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query recoverable checkout orders: %w", err)
+	}
+	recovered := 0
+	for _, order := range orders {
+		// Do not change updated_at: fulfillment uses it as the lease version.
+		rotation := paymentorder.CheckoutReconciledAtIsNil()
+		if order.CheckoutReconciledAt != nil {
+			rotation = paymentorder.CheckoutReconciledAtEQ(*order.CheckoutReconciledAt)
+		}
+		count, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(order.ID),
+			recoverable, rotation, paymentorder.StatusEQ(order.Status), func(selector *entsql.Selector) {
+				if selector.Dialect() == dialect.Postgres {
+					// SQLite fixtures do not consistently round-trip timestamp text.
+					paymentorder.UpdatedAtEQ(order.UpdatedAt)(selector)
+				}
+			}).SetCheckoutReconciledAt(time.Now().UTC()).
+			SetUpdatedAt(order.UpdatedAt).Save(ctx)
+		if err != nil {
+			return recovered, err
+		}
+		if count == 0 {
+			continue
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		if order.PaidAt != nil {
+			// Recover a crash after recording payment but before fulfillment. The
+			// fulfillment lease/idempotency logic also protects concurrent retries.
+			if err := s.executeFulfillment(checkCtx, order.ID); err != nil {
+				slog.Warn("checkout fulfillment retry failed", "orderID", order.ID, "error", err)
+			}
+		} else if s.reconcilePaid(checkCtx, order) == checkPaidResultAlreadyPaid {
+			// Never close a trade in the checkout sweep; the expiry path owns closing.
+			recovered++
+		}
+		cancel()
+	}
+	return recovered, nil
+}
+
 // VerifyOrderPublic returns the currently persisted public order state without
 // triggering any upstream reconciliation. Signed resume-token recovery is the
 // only public recovery path allowed to query upstream state.
@@ -347,7 +459,7 @@ func (s *PaymentService) VerifyOrderPublic(ctx context.Context, outTradeNo strin
 		return nil, err
 	}
 	o, err := s.entClient.PaymentOrder.Query().
-		Where(paymentorder.OutTradeNo(outTradeNo)).
+		Where(paymentorder.OutTradeNo(outTradeNo), paymentorder.CheckoutKeyHashIsNil()).
 		Only(ctx)
 	if err != nil {
 		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
@@ -376,13 +488,22 @@ func normalizeOrderLookupOutTradeNo(raw string) (string, error) {
 	return outTradeNo, nil
 }
 
+// Expiry hides launch instructions and releases the local pending slot. It is
+// not proof of upstream cancellation; checkout callback/resume can still fulfill
+// a verified payment with the original price and provider identity.
 func (s *PaymentService) ExpireTimedOutOrders(ctx context.Context) (int, error) {
 	now := time.Now()
+	// No gateway exists until reservation. Expire abandoned checkouts with a
+	// conditional write so this cannot undo a concurrent promotion.
+	n, err := s.entClient.PaymentOrder.Update().Where(paymentorder.StatusEQ(OrderStatusAwaitingConfirmation),
+		paymentorder.CheckoutStartedAtIsNil(), paymentorder.ExpiresAtLTE(now)).SetStatus(OrderStatusExpired).Save(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("expire unconfirmed checkouts: %w", err)
+	}
 	orders, err := s.entClient.PaymentOrder.Query().Where(paymentorder.StatusEQ(OrderStatusPending), paymentorder.ExpiresAtLTE(now)).All(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("query expired: %w", err)
+		return n, fmt.Errorf("query expired: %w", err)
 	}
-	n := 0
 	for _, o := range orders {
 		// Check upstream payment status before expiring — the user may have
 		// paid just before timeout and the webhook hasn't arrived yet.
@@ -401,6 +522,9 @@ func (s *PaymentService) ExpireTimedOutOrders(ctx context.Context) (int, error) 
 // getOrderProvider creates a provider using the order's original instance config.
 // Falls back to registry lookup if instance ID is missing (legacy orders).
 func (s *PaymentService) getOrderProvider(ctx context.Context, o *dbent.PaymentOrder) (payment.Provider, error) {
+	if o.CheckoutKeyHash != nil && o.CheckoutStartedAt == nil {
+		return nil, fmt.Errorf("checkout order %d has not been started", o.ID)
+	}
 	inst, err := s.getOrderProviderInstance(ctx, o)
 	if err != nil {
 		return nil, fmt.Errorf("load order provider instance: %w", err)
