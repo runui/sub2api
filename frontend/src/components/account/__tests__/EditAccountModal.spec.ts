@@ -338,6 +338,40 @@ describe('EditAccountModal', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it.each(['', ' replacement '])('edits a fal account with API key input %j', async (replacement) => {
+    const account = {
+      ...buildAccount(),
+      platform: 'fal',
+      credentials: {},
+      credentials_status: { has_api_key: true }
+    }
+    updateAccountMock.mockClear().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    expect(wrapper.text()).toContain('admin.accounts.falRouteHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.baseUrl')
+    expect(wrapper.find('[data-testid="group-selector"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+
+    await wrapper.get('[data-tour="edit-account-form-name"]').setValue('fal video')
+    await wrapper.get('#edit-fal-api-key').setValue(replacement)
+    await wrapper.get('#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock).toHaveBeenCalledOnce()
+    const [id, payload] = updateAccountMock.mock.calls[0]
+    expect(id).toBe(account.id)
+    expect(payload.name).toBe('fal video')
+    expect(payload).not.toHaveProperty('group_ids')
+    expect(payload).not.toHaveProperty('upstream_billing_probe_enabled')
+    if (replacement) {
+      expect(payload.credentials).toEqual({ api_key: 'replacement' })
+    } else {
+      expect(payload).not.toHaveProperty('credentials')
+    }
+    wrapper.unmount()
+  })
+
   it('uses the saved connection until the administrator changes the upstream', async () => {
     const account = buildAccount()
     account.notes = 'local notes'

@@ -222,6 +222,38 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it('creates a fal API key account without a base URL, group, or upstream billing probe', async () => {
+    const wrapper = mountModal()
+    await wrapper.get('[data-testid="platform-button-fal"]').trigger('click')
+
+    expect(wrapper.text()).toContain('admin.accounts.falRouteHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.baseUrl')
+    expect(wrapper.find('[data-tour="account-form-groups"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+    await wrapper.get('[data-tour="account-form-name"]').setValue('fal video')
+    await wrapper.get('#create-fal-api-key').setValue('   ')
+    await wrapper.get('#create-account-form').trigger('submit.prevent')
+    expect(createAccountMock).not.toHaveBeenCalled()
+
+    await wrapper.get('#create-fal-api-key').setValue(' example-fal-key ')
+    await wrapper.get('#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledOnce()
+    const payload = createAccountMock.mock.calls[0][0]
+    expect(payload).toMatchObject({
+      name: 'fal video',
+      platform: 'fal',
+      type: 'apikey',
+      credentials: { api_key: 'example-fal-key' }
+    })
+    expect(payload.credentials).toEqual({ api_key: 'example-fal-key' })
+    expect(payload).not.toHaveProperty('group_ids')
+    expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
+    expect(syncUpstreamModelsMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('fills the name and notes from the unsaved API key and its adaptive Chat URL', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'Kimi')

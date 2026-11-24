@@ -49,7 +49,7 @@
         <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
           <label class="input-label mb-0">{{ t('admin.accounts.accountName') }}</label>
           <UpstreamGroupSyncButton
-            v-if="form.type === 'apikey'"
+            v-if="form.type === 'apikey' && form.platform !== 'fal'"
             v-model:name="form.name"
             v-model:notes="form.notes"
             :source="upstreamGroupSource"
@@ -66,7 +66,7 @@
           :placeholder="t('admin.accounts.enterAccountName')"
           data-tour="account-form-name"
         />
-        <p v-if="form.type === 'apikey' && upstreamGroupSyncEnabled" class="input-hint">
+        <p v-if="form.type === 'apikey' && form.platform !== 'fal' && upstreamGroupSyncEnabled" class="input-hint">
           {{ t('admin.accounts.upstreamBilling.autoSyncGroupHint') }}
         </p>
       </div>
@@ -186,6 +186,20 @@
           >
             <PlatformIcon platform="typesafe" size="sm" />
             TypeSafe / Jev
+          </button>
+          <button
+            type="button"
+            data-testid="platform-button-fal"
+            @click="form.platform = 'fal'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'fal'
+                ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-600 dark:text-primary-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <PlatformIcon platform="fal" size="sm" />
+            fal
           </button>
         </div>
         <!-- 国产厂商：Kimi / Zhipu GLM / DeepSeek / MiniMax -->
@@ -1513,8 +1527,14 @@
         </div>
       </div>
 
-      <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
-      <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
+      <div v-if="form.platform === 'fal'">
+        <label for="create-fal-api-key" class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
+        <input id="create-fal-api-key" v-model="apiKeyValue" type="password" required autocomplete="new-password" class="input font-mono" />
+        <p class="input-hint">{{ t('admin.accounts.falRouteHint') }}</p>
+      </div>
+
+      <!-- API Key input (Antigravity and fal have their own fields) -->
+      <div v-else-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
         <div v-if="!isMultiProtocolPlatform || apiProtocol !== 'adaptive'">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -2363,7 +2383,7 @@
 
       <!-- 配额控制 (非 Anthropic apikey/bedrock，以及 Vertex service_account) -->
       <div
-        v-else-if="supportsAccountQuota(form.type)"
+        v-else-if="form.platform !== 'fal' && supportsAccountQuota(form.type)"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -2642,7 +2662,7 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <div v-if="form.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -3248,6 +3268,7 @@
       </div>
 
       <UpstreamRequestIdHeaderField
+        v-if="form.platform !== 'fal'"
         v-model="upstreamRequestIdHeader"
         :platform="form.platform"
         :type="form.type"
@@ -3259,14 +3280,14 @@
           <input v-model.number="form.concurrency" type="number" min="1" class="input"
             @input="form.concurrency = Math.max(1, form.concurrency || 1)" />
         </div>
-        <div>
+        <div v-if="form.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
           <input v-model.number="form.load_factor" type="number" min="1"
             class="input" :placeholder="String(form.concurrency || 1)"
             @input="form.load_factor = (form.load_factor &amp;&amp; form.load_factor >= 1) ? form.load_factor : null" />
           <p class="input-hint">{{ t('admin.accounts.loadFactorHint') }}</p>
         </div>
-        <div>
+        <div v-if="form.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.priority') }}</label>
           <input
             v-model.number="form.priority"
@@ -3277,7 +3298,7 @@
           />
           <p class="input-hint">{{ t('admin.accounts.priorityHint') }}</p>
         </div>
-        <div>
+        <div v-if="form.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
           <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input" />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
@@ -3728,7 +3749,7 @@
         </div>
       </div>
 
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div v-if="form.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <!-- Mixed Scheduling (only for antigravity accounts) -->
         <div v-if="form.platform === 'antigravity'" class="flex items-center gap-2">
           <label class="flex cursor-pointer items-center gap-2">
@@ -5105,6 +5126,7 @@ const form = reactive({
 
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
+  if (form.platform === 'fal') return false
   // Antigravity upstream 类型不需要 OAuth 流程
   if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
     return false
@@ -5179,8 +5201,8 @@ watch(
 watch(
   [accountCategory, addMethod, antigravityAccountType, () => form.platform],
   ([category, method, agType]) => {
-    // Antigravity upstream 类型（实际创建为 apikey）
-    if (form.platform === 'antigravity' && agType === 'upstream') {
+    // fal and Antigravity upstream always create API key accounts.
+    if (form.platform === 'fal' || (form.platform === 'antigravity' && agType === 'upstream')) {
       form.type = 'apikey'
       return
     }
@@ -5203,7 +5225,10 @@ watch(
 // Reset platform-specific settings when platform changes
 watch(
   () => form.platform,
-  (newPlatform) => {
+  (newPlatform, previousPlatform) => {
+    if (newPlatform === 'fal' || previousPlatform === 'fal') {
+      apiKeyValue.value = ''
+    }
     // Reset base URL based on platform
     if (isMultiProtocolApiKeyPlatform(newPlatform)) {
       const mode = newPlatform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
@@ -6019,6 +6044,31 @@ const handleVertexServiceAccountDrop = async (event: DragEvent) => {
 }
 
 const handleSubmit = async () => {
+  if (form.platform === 'fal') {
+    if (!form.name.trim()) {
+      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+      return
+    }
+    const apiKey = apiKeyValue.value.trim()
+    if (!apiKey) {
+      appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
+      return
+    }
+    await doCreateAccount({
+      name: form.name.trim(),
+      notes: form.notes,
+      platform: 'fal',
+      type: 'apikey',
+      credentials: { api_key: apiKey },
+      proxy_id: form.proxy_id,
+      concurrency: form.concurrency,
+      priority: 1,
+      expires_at: form.expires_at,
+      auto_pause_on_expired: autoPauseOnExpired.value
+    })
+    return
+  }
+
   // For OAuth-based type, handle OAuth flow (goes to step 2)
   if (isOAuthFlow.value) {
     if (!isGrokSSOInputMethod.value && !form.name.trim()) {

@@ -15,7 +15,7 @@
         <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
           <label class="input-label mb-0">{{ t('common.name') }}</label>
           <UpstreamGroupSyncButton
-            v-if="account.type === 'apikey' || (account.platform === 'antigravity' && account.type === 'upstream')"
+            v-if="(account.type === 'apikey' && account.platform !== 'fal') || (account.platform === 'antigravity' && account.type === 'upstream')"
             v-model:name="form.name"
             v-model:notes="form.notes"
             :source="upstreamGroupSource"
@@ -25,7 +25,7 @@
           />
         </div>
         <input v-model="form.name" type="text" required class="input" data-tour="edit-account-form-name" />
-        <p v-if="account.type === 'apikey' && upstreamGroupSyncEnabled" class="input-hint">
+        <p v-if="account.type === 'apikey' && account.platform !== 'fal' && upstreamGroupSyncEnabled" class="input-hint">
           {{ t('admin.accounts.upstreamBilling.autoSyncGroupHint') }}
         </p>
       </div>
@@ -40,8 +40,15 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <!-- API Key fields (only for apikey type) -->
-      <div v-if="account.type === 'apikey'" class="space-y-4">
+      <div v-if="account.platform === 'fal' && account.type === 'apikey'">
+        <label for="edit-fal-api-key" class="input-label">{{ t('admin.accounts.apiKey') }}</label>
+        <input id="edit-fal-api-key" v-model="editApiKey" type="password" autocomplete="new-password" class="input font-mono" />
+        <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+        <p class="input-hint">{{ t('admin.accounts.falRouteHint') }}</p>
+      </div>
+
+      <!-- API Key fields (fal has its own fields) -->
+      <div v-else-if="account.type === 'apikey'" class="space-y-4">
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -1682,7 +1689,7 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <div v-if="account.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -1942,6 +1949,7 @@
       </div>
 
       <UpstreamRequestIdHeaderField
+        v-if="account.platform !== 'fal'"
         v-model="upstreamRequestIdHeader"
         :platform="account.platform"
         :type="account.type"
@@ -1953,14 +1961,14 @@
           <input v-model.number="form.concurrency" type="number" min="1" class="input"
             @input="form.concurrency = Math.max(1, form.concurrency || 1)" />
         </div>
-        <div>
+        <div v-if="account.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
           <input v-model.number="form.load_factor" type="number" min="1"
             class="input" :placeholder="String(form.concurrency || 1)"
             @input="form.load_factor = (form.load_factor &amp;&amp; form.load_factor >= 1) ? form.load_factor : null" />
           <p class="input-hint">{{ t('admin.accounts.loadFactorHint') }}</p>
         </div>
-        <div>
+        <div v-if="account.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.priority') }}</label>
           <input
             v-model.number="form.priority"
@@ -1971,7 +1979,7 @@
           />
           <p class="input-hint">{{ t('admin.accounts.priorityHint') }}</p>
         </div>
-        <div>
+        <div v-if="account.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
           <input
             v-model.number="form.rate_multiplier"
@@ -2282,7 +2290,7 @@
       </div>
 
       <div
-        v-if="account?.type === 'apikey'"
+        v-if="account.type === 'apikey' && account.platform !== 'fal'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div>
@@ -2511,7 +2519,7 @@
       </div>
       <!-- 配额控制 (非 Anthropic apikey/bedrock，以及 Vertex service_account) -->
       <div
-        v-else-if="supportsAccountQuota(account?.type)"
+        v-else-if="account.platform !== 'fal' && supportsAccountQuota(account.type)"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -3356,6 +3364,7 @@
 
       <!-- Group Selection - 仅标准模式显示 -->
       <GroupSelector
+        v-if="account.platform !== 'fal'"
         v-model="form.group_ids"
         :groups="selectableGroups"
         :platform="account?.platform"
@@ -5736,6 +5745,24 @@ const handleSubmit = async () => {
       updatePayload.load_factor = 0
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
+    if (props.account.platform === 'fal' && props.account.type === 'apikey') {
+      const apiKey = editApiKey.value.trim()
+      const credentials = props.account.credentials ?? {}
+      const hasExistingApiKey = props.account.credentials_status?.has_api_key ?? Boolean(credentials.api_key)
+      if (apiKey) {
+        updatePayload.credentials = { ...credentials, api_key: apiKey }
+      } else if (!hasExistingApiKey) {
+        appStore.showError(t('admin.accounts.apiKeyIsRequired'))
+        return
+      }
+      delete updatePayload.group_ids
+      delete updatePayload.load_factor
+      delete updatePayload.priority
+      delete updatePayload.rate_multiplier
+      await submitUpdateAccount(accountID, updatePayload)
+      return
+    }
+
     if (props.account.type === 'apikey') {
       if (form.name === props.account.name) delete updatePayload.name
       if (form.notes === (props.account.notes || '')) delete updatePayload.notes

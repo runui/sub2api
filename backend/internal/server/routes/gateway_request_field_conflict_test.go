@@ -34,9 +34,9 @@ func TestGatewayRoutesRejectConflictingFieldsMountedOnEveryGatewayRoute(t *testi
 
 	// 带合成路由改写的链：歧义拒绝必须在改写之前。
 	for _, chain := range []string{
-		`gateway.Use(rejectConflictingFields)` + "\n\t" + `gateway.Use(compositeTarget)`,
+		"gateway.Use(rejectConflictingFields)\n\tgateway.Use(matchFalVideo)\n\tgateway.Use(compositeTarget)",
 		`gemini.Use(rejectConflictingFields)` + "\n\t" + `gemini.Use(compositeGeminiTarget)`,
-		`groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, handler)`,
+		`groupModelAllowlist, rejectConflictingFields, matchFalVideo, compositeTarget, requireGroupAnthropic, handler)`,
 		`groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic)`,
 	} {
 		require.Contains(t, source, chain)

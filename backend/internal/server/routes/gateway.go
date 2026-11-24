@@ -125,6 +125,10 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoStatusHandler := func(c *gin.Context) {
+		if h.FalVideo != nil && service.IsFalVideoTaskID(c.Param("request_id")) {
+			h.FalVideo.Status(c)
+			return
+		}
 		// Video status requests do not carry a model, so composite groups cannot
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler and let scheduler/account selection enforce capacity.
@@ -141,6 +145,10 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoContentHandler := func(c *gin.Context) {
+		if h.FalVideo != nil && service.IsFalVideoTaskID(c.Param("request_id")) {
+			h.FalVideo.Content(c)
+			return
+		}
 		// Video content requests do not carry a model, so composite groups cannot
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler just like video status lookups.
@@ -195,6 +203,23 @@ func RegisterGatewayRoutes(
 		}
 	}
 
+	// Match the public model after admission guards, before Composite can rewrite it.
+	matchFalVideo := func(c *gin.Context) {
+		if h.FalVideo != nil && c.Request.Method == http.MethodPost {
+			switch c.FullPath() {
+			case "/v1/videos", "/v1/videos/generations", "/videos", "/videos/generations":
+				if h.FalVideo.TryCreate(c) {
+					c.Abort()
+					return
+				}
+			}
+		}
+		if middleware.RejectFalVideoSpendingDenial(c) {
+			return
+		}
+		c.Next()
+	}
+
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	gateway.Use(groupBodyLimit)
@@ -205,6 +230,7 @@ func RegisterGatewayRoutes(
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	gateway.Use(groupModelAllowlist)
 	gateway.Use(rejectConflictingFields)
+	gateway.Use(matchFalVideo)
 	gateway.Use(compositeTarget)
 	gateway.Use(requireGroupAnthropic)
 	{
@@ -389,7 +415,7 @@ func RegisterGatewayRoutes(
 	// 根路径别名共用中间件链：白名单准入在 apiKeyAuth 之后、compositeTarget
 	// 之前，避免逐条路由手工维护链导致漏挂。
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
-		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, handler)
+		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, matchFalVideo, compositeTarget, requireGroupAnthropic, handler)
 	}
 	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
 		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)

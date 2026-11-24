@@ -416,6 +416,9 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 // Grok media eligibility helpers live in account_grok_media_eligibility.go.
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
+	if input.Platform == PlatformFal && (input.Type != AccountTypeAPIKey || !hasFalVideoAPIKey(input.Credentials)) {
+		return nil, infraerrors.BadRequest("INVALID_FAL_ACCOUNT", "fal accounts require apikey credentials with api_key")
+	}
 	if input.Platform == PlatformTypeSafe && input.Type != AccountTypeAPIKey {
 		return nil, errors.New("typesafe accounts only support apikey credentials")
 	}
@@ -510,8 +513,11 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
+	if input.Platform == PlatformFal && len(groupIDs) != 0 {
+		return nil, infraerrors.BadRequest("INVALID_FAL_ACCOUNT", "bind fal accounts using fal_video.routes, not account groups")
+	}
 	// 如果没有指定分组,自动绑定对应平台的默认分组
-	if len(groupIDs) == 0 && !input.SkipDefaultGroupBind {
+	if len(groupIDs) == 0 && !input.SkipDefaultGroupBind && input.Platform != PlatformFal {
 		defaultGroupName := input.Platform + "-default"
 		groups, err := s.groupRepo.ListActiveByPlatform(ctx, input.Platform)
 		if err == nil {
@@ -600,6 +606,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if account.Platform == PlatformTypeSafe && input.Type != "" && input.Type != AccountTypeAPIKey {
 		return nil, errors.New("typesafe accounts only support apikey credentials")
 	}
+	if account.Platform == PlatformFal && input.Type != "" && input.Type != AccountTypeAPIKey {
+		return nil, infraerrors.BadRequest("INVALID_FAL_ACCOUNT", "fal accounts require apikey credentials")
+	}
+	if account.Platform == PlatformFal && input.GroupIDs != nil && len(*input.GroupIDs) != 0 {
+		return nil, infraerrors.BadRequest("INVALID_FAL_ACCOUNT", "bind fal accounts using fal_video.routes, not account groups")
+	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
@@ -678,6 +690,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		// Strip SSO/password residue that must never sit next to OAuth tokens.
 		account.Credentials = SanitizeStoredCredentials(account.Platform, account.Credentials)
+	}
+	if account.Platform == PlatformFal && !hasFalVideoAPIKey(account.Credentials) {
+		return nil, infraerrors.BadRequest("INVALID_FAL_ACCOUNT", "fal accounts require credentials.api_key")
 	}
 	// 放在 credentials 分支之外：只改账号类型（不带 credentials）的更新同样要拦，
 	// 否则 api_key 账号改成 OAuth 后会把带变量的覆写值留在 OAuth 账号上。
@@ -1047,7 +1062,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || (input.GroupIDs != nil && len(*input.GroupIDs) > 0) || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1057,6 +1072,14 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	targetsByID := make(map[int64]*Account, len(cachedTargets))
 	for _, account := range cachedTargets {
 		if account != nil {
+			if account.Platform == PlatformFal {
+				if input.GroupIDs != nil && len(*input.GroupIDs) > 0 {
+					return nil, infraerrors.BadRequest("INVALID_FAL_ACCOUNT", "bind fal accounts using fal_video.routes, not account groups")
+				}
+				if _, updating := input.Credentials["api_key"]; updating && !hasFalVideoAPIKey(input.Credentials) {
+					return nil, infraerrors.BadRequest("INVALID_FAL_ACCOUNT", "fal accounts require credentials.api_key")
+				}
+			}
 			targetsByID[account.ID] = account
 		}
 	}

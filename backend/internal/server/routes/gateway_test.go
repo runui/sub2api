@@ -270,6 +270,27 @@ func TestGatewayRoutesCompositeVideoLookupsUseGrokHandler(t *testing.T) {
 	}
 }
 
+func TestGatewayRoutesFalVideoLookupsNeverFallBackToGrok(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	groupID := int64(12)
+	RegisterGatewayRoutes(r, &handler.Handlers{
+		Gateway: &handler.GatewayHandler{}, OpenAIGateway: &handler.OpenAIGatewayHandler{},
+		FalVideo: handler.NewFalVideoHandler(nil, nil),
+	}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{ID: 8, UserID: 7, GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI}})
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 7})
+		c.Next()
+	}), nil, nil, nil, nil, nil, &config.Config{})
+	for _, prefix := range []string{"/v1/videos/", "/videos/", "/v1/videos/generations/", "/videos/generations/"} {
+		for _, suffix := range []string{"", "/content"} {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, prefix+"falvid_123"+suffix, nil))
+			require.Equal(t, http.StatusServiceUnavailable, w.Code, "fal IDs must dispatch to fal even for non-Grok groups")
+		}
+	}
+}
+
 func TestGatewayRoutesCompositeMessagesWithGrokModelUsesOpenAIGateway(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformComposite)
 

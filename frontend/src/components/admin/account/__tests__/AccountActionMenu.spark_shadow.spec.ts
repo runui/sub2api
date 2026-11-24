@@ -48,6 +48,20 @@ const anchorRect = new DOMRect(100, 100, 24, 24)
 const getBodyText = () => document.body.textContent ?? ''
 const getBodyButtons = () => Array.from(document.body.querySelectorAll('button'))
 
+describe('AccountActionMenu for fal', () => {
+  it('omits text connection tests and scheduled tests', () => {
+    const account = makeAccount({ platform: 'fal', type: 'apikey' })
+    const wrapper = mount(AccountActionMenu, {
+      props: { show: true, account, anchorRect },
+      attachTo: document.body,
+    })
+    expect(getBodyText()).not.toContain('admin.accounts.testConnection')
+    expect(getBodyText()).not.toContain('admin.scheduledTests.schedule')
+    expect(getBodyText()).toContain('admin.accounts.viewStats')
+    wrapper.unmount()
+  })
+})
+
 describe('AccountActionMenu — spark shadow 按钮可见性', () => {
   it('普通账号显示「复制账号」按钮', () => {
     const account = makeAccount({ platform: 'anthropic', type: 'apikey', parent_account_id: null })

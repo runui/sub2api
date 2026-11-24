@@ -1326,6 +1326,18 @@ update:
   proxy_url: ""
 
 # =============================================================================
+# Optional xAI-compatible Grok Imagine Video 1.5 via fal
+# =============================================================================
+# See docs/FAL_VIDEO_CN.md for account setup, pricing, and API behavior.
+# fal_video:
+#   routes:
+#     - group_id: 12
+#       account_id: 34
+#       model: grok-imagine-video-1.5
+#       price_usd_per_second:
+#         "720p": 0.10 # Example customer price, not a fal quote.
+
+# =============================================================================
 # Image Storage (异步图片任务结果对象存储)
 # =============================================================================
 # 长耗时生图套 Cloudflare 会 524 超时，异步图片任务接口（/v1/images/generations/async
