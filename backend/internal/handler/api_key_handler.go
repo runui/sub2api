@@ -226,6 +226,23 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	})
 }
 
+// EnsureDefault returns the first key in the default composite group or creates one.
+// POST /api/v1/keys/ensure
+func (h *APIKeyHandler) EnsureDefault(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	key, err := h.apiKeyService.EnsureDefault(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.APIKeyFromService(key).Localized(c.GetHeader("Accept-Language")))
+}
+
 // Update handles updating an API key
 // PUT /api/v1/api-keys/:id
 func (h *APIKeyHandler) Update(c *gin.Context) {

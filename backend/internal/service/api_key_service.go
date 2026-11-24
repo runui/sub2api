@@ -564,6 +564,18 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		}
 	}
 
+	apiKey, err := s.insertAPIKey(ctx, userID, req, key)
+	if err != nil {
+		return nil, err
+	}
+	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	s.compileAPIKeyIPRules(apiKey)
+	return apiKey, nil
+}
+
+// insertAPIKey shares creation limits and initial fields with ensure. Its
+// caller owns cache invalidation so transactional writes can commit first.
+func (s *APIKeyService) insertAPIKey(ctx context.Context, userID int64, req CreateAPIKeyRequest, key string) (*APIKey, error) {
 	if err := s.checkAPIKeyCreateLimits(ctx, userID); err != nil {
 		return nil, err
 	}
@@ -593,9 +605,6 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
-
-	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
-	s.compileAPIKeyIPRules(apiKey)
 
 	return apiKey, nil
 }

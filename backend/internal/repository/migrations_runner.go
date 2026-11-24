@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/migrations"
 )
 
@@ -114,10 +116,12 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 // 返回：
 //   - error: 迁移过程中的任何错误
 func ApplyMigrations(ctx context.Context, db *sql.DB) error {
-	if db == nil {
-		return errors.New("nil sql db")
-	}
-	return applyMigrationsFS(ctx, db, migrations.FS)
+	return ApplyMigrationsForRunMode(ctx, db, config.RunModeStandard)
+}
+
+// ApplyMigrationsForRunMode applies the schema and selects the fresh-install seed for the run mode.
+func ApplyMigrationsForRunMode(ctx context.Context, db *sql.DB, runMode string) error {
+	return applyMigrationsFSForRunMode(ctx, db, migrations.FS, config.NormalizeRunMode(runMode))
 }
 
 // applyMigrationsFS 是迁移执行的核心实现。
@@ -139,6 +143,10 @@ func ApplyMigrations(ctx context.Context, db *sql.DB) error {
 //   - db: 数据库连接
 //   - fsys: 包含迁移文件的文件系统（通常是 embed.FS）
 func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
+	return applyMigrationsFSForRunMode(ctx, db, fsys, config.RunModeStandard)
+}
+
+func applyMigrationsFSForRunMode(ctx context.Context, db *sql.DB, fsys fs.FS, runMode string) error {
 	if db == nil {
 		return errors.New("nil sql db")
 	}
@@ -264,7 +272,7 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		}
 
 		// 执行迁移 SQL
-		if _, err := tx.ExecContext(ctx, content); err != nil {
+		if err := executeMigration(ctx, tx, name, content, runMode); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
@@ -283,6 +291,21 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	}
 
 	return nil
+}
+
+func executeMigration(ctx context.Context, tx *sql.Tx, name, content, runMode string) error {
+	result, err := tx.ExecContext(ctx, content)
+	if err != nil || name != "008_seed_default_group.sql" || runMode != config.RunModeStandard {
+		return err
+	}
+	// Keep the released migration checksum intact. Only a row inserted by 008 in
+	// this transaction is a seed we own; an existing group named default is not.
+	inserted, err := result.RowsAffected()
+	if err != nil || inserted == 0 {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE groups SET platform = $1 WHERE name = $2`, service.PlatformComposite, service.DefaultCompositeGroupName)
+	return err
 }
 
 type migrationConnection interface {
