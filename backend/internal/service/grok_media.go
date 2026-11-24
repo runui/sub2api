@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -692,12 +693,19 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	}
 	requestInfo := ParseGrokMediaRequest(contentType, body)
 	upstreamModel := requestInfo.Model
-	if endpoint.RequiresRequestBody() && gjson.ValidBytes(body) {
-		if mappedModel := strings.TrimSpace(account.GetMappedModel(requestInfo.Model)); mappedModel != "" {
+	if endpoint.RequiresRequestBody() && (gjson.ValidBytes(body) || endpoint == GrokMediaEndpointVideosGenerations) {
+		routingModel := requestInfo.Model
+		if endpoint == GrokMediaEndpointVideosGenerations {
+			if target, ok := ResolvedUpstreamModelFromContext(ctx); ok {
+				routingModel = target
+			}
+		}
+		upstreamModel = routingModel
+		if mappedModel := strings.TrimSpace(account.GetMappedModel(routingModel)); mappedModel != "" {
 			upstreamModel = mappedModel
 		}
 		if upstreamModel != requestInfo.Model {
-			body, err = sjson.SetBytes(body, "model", upstreamModel)
+			body, contentType, err = rewriteGrokMediaModel(body, contentType, upstreamModel)
 			if err != nil {
 				return nil, fmt.Errorf("rewrite grok media account mapped model: %w", err)
 			}
@@ -805,6 +813,47 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		VideoResolution:      usage.VideoResolution,
 		VideoDurationSeconds: usage.VideoDurationSeconds,
 	}, nil
+}
+
+func rewriteGrokMediaModel(body []byte, contentType, model string) ([]byte, string, error) {
+	if gjson.ValidBytes(body) {
+		out, err := sjson.SetBytes(body, "model", model)
+		return out, contentType, err
+	}
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "multipart/form-data" || params["boundary"] == "" {
+		return nil, "", errors.New("invalid multipart video request")
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+	var out bytes.Buffer
+	writer := multipart.NewWriter(&out)
+	// Replace only the model field; keep file parts and their headers intact.
+	for {
+		part, err := reader.NextRawPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		if part.FormName() == "model" && part.FileName() == "" {
+			continue
+		}
+		dst, err := writer.CreatePart(part.Header)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := io.Copy(dst, part); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := writer.WriteField("model", model); err != nil {
+		return nil, "", err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return out.Bytes(), writer.FormDataContentType(), nil
 }
 
 func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(

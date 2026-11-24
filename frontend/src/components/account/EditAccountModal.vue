@@ -45,6 +45,12 @@
         <input id="edit-fal-api-key" v-model="editApiKey" type="password" autocomplete="new-password" class="input font-mono" />
         <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
         <p class="input-hint">{{ t('admin.accounts.falRouteHint') }}</p>
+        <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="mt-2 flex items-center gap-2">
+          <input v-model="mapping.from" :aria-label="t('admin.accounts.requestModel')" :placeholder="t('admin.accounts.requestModel')" class="input min-w-0" />
+          <input v-model="mapping.to" :aria-label="t('admin.accounts.actualModel')" placeholder="xai/grok-imagine-video/v1.5" class="input min-w-0" />
+          <button type="button" class="btn btn-secondary" @click="removeModelMapping(index)">{{ t('common.remove') }}</button>
+        </div>
+        <button type="button" class="btn btn-secondary mt-2" @click="addModelMapping">{{ t('admin.accounts.addMapping') }}</button>
       </div>
 
       <!-- API Key fields (fal has its own fields) -->
@@ -3364,7 +3370,6 @@
 
       <!-- Group Selection - 仅标准模式显示 -->
       <GroupSelector
-        v-if="account.platform !== 'fal'"
         v-model="form.group_ids"
         :groups="selectableGroups"
         :platform="account?.platform"
@@ -5749,16 +5754,14 @@ const handleSubmit = async () => {
       const apiKey = editApiKey.value.trim()
       const credentials = props.account.credentials ?? {}
       const hasExistingApiKey = props.account.credentials_status?.has_api_key ?? Boolean(credentials.api_key)
-      if (apiKey) {
-        updatePayload.credentials = { ...credentials, api_key: apiKey }
-      } else if (!hasExistingApiKey) {
+      if (!apiKey && !hasExistingApiKey) {
         appStore.showError(t('admin.accounts.apiKeyIsRequired'))
         return
       }
-      delete updatePayload.group_ids
-      delete updatePayload.load_factor
-      delete updatePayload.priority
-      delete updatePayload.rate_multiplier
+      const mapping = buildModelMappingObject('mapping', [], modelMappings.value) ?? {}
+      if (apiKey || Object.keys(mapping).length > 0 || credentials.model_mapping) {
+        updatePayload.credentials = { ...credentials, ...(apiKey ? { api_key: apiKey } : {}), model_mapping: mapping }
+      }
       await submitUpdateAccount(accountID, updatePayload)
       return
     }

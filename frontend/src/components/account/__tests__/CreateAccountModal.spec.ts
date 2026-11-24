@@ -222,13 +222,13 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
   afterEach(() => vi.useRealTimers())
 
-  it('creates a fal API key account without a base URL, group, or upstream billing probe', async () => {
+  it('creates a fal API key account with model mapping and without a base URL or upstream billing probe', async () => {
     const wrapper = mountModal()
     await wrapper.get('[data-testid="platform-button-fal"]').trigger('click')
 
     expect(wrapper.text()).toContain('admin.accounts.falRouteHint')
     expect(wrapper.text()).not.toContain('admin.accounts.baseUrl')
-    expect(wrapper.find('[data-tour="account-form-groups"]').exists()).toBe(false)
+    expect(wrapper.find('[data-tour="account-form-groups"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
     await wrapper.get('[data-tour="account-form-name"]').setValue('fal video')
     await wrapper.get('#create-fal-api-key').setValue('   ')
@@ -236,6 +236,9 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).not.toHaveBeenCalled()
 
     await wrapper.get('#create-fal-api-key').setValue(' example-fal-key ')
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.addMapping')!.trigger('click')
+    await wrapper.get('[aria-label="admin.accounts.requestModel"]').setValue('video-public')
+    await wrapper.get('[aria-label="admin.accounts.actualModel"]').setValue('xai/grok-imagine-video/v1.5')
     await wrapper.get('#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -247,8 +250,8 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
       type: 'apikey',
       credentials: { api_key: 'example-fal-key' }
     })
-    expect(payload.credentials).toEqual({ api_key: 'example-fal-key' })
-    expect(payload).not.toHaveProperty('group_ids')
+    expect(payload.credentials).toEqual({ api_key: 'example-fal-key', model_mapping: { 'video-public': 'xai/grok-imagine-video/v1.5' } })
+    expect(payload.group_ids).toEqual([])
     expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
     expect(syncUpstreamModelsMock).not.toHaveBeenCalled()
     wrapper.unmount()

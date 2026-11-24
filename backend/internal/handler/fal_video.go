@@ -14,20 +14,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
 type falVideoTasks interface {
-	ResolveRoute(context.Context, int64, string) (config.FalVideoRoute, bool, error)
 	Replay(context.Context, service.FalVideoRequest) (falvideotask.Task, bool, error)
 	Submit(context.Context, service.FalVideoRequest) (falvideotask.Task, error)
 	Get(ctx context.Context, id string, userID, keyID, groupID int64) (falvideotask.Task, error)
@@ -47,51 +43,28 @@ func NewFalVideoHandler(svc *service.FalVideoService, gateway *OpenAIGatewayHand
 	return h
 }
 
-// TryCreate claims configured video routes and replays of existing fal tasks.
-func (h *FalVideoHandler) TryCreate(c *gin.Context) bool {
-	if h == nil || h.tasks == nil || c.Request == nil || c.Request.Body == nil || c.Request.Body == http.NoBody {
+// ReplayCreate is checked before resolving a new route or applying spending denial.
+func (h *FalVideoHandler) ReplayCreate(c *gin.Context, model string, body []byte) bool {
+	if h == nil || h.tasks == nil || model == "" {
 		return false
 	}
 	key, _ := middleware.GetAPIKeyFromContext(c)
 	if key == nil || key.Group == nil || key.GroupID == nil || *key.GroupID <= 0 {
 		return false
 	}
+	mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
+	return h.tryReplay(c, key, model, mediaType, body)
+}
 
-	body, err := peekFalVideoBody(c.Request)
-	if err != nil {
-		return false // The fallback route owns body-read errors when the model is not known.
+func (h *FalVideoHandler) Create(c *gin.Context, model, routingModel string, body []byte) {
+	if h == nil || h.tasks == nil {
+		writeFalVideoServiceError(c, service.ErrFalVideoTemporarilyUnavailable, "")
+		return
 	}
-	body = requestmodel.TrimUTF8BOM(body)
-	contentType := c.GetHeader("Content-Type")
-	mediaType, _, _ := mime.ParseMediaType(contentType)
-	var model string
-	if value := gjson.GetBytes(body, "model"); value.Type == gjson.String {
-		model = strings.TrimSpace(value.String())
-	} else if mediaType == "multipart/form-data" {
-		model = service.ExtractGrokMediaModel(contentType, body)
+	if key, subject, ok := falVideoIdentity(c); ok {
+		mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
+		h.create(c, key, subject, model, routingModel, mediaType, body)
 	}
-	if model == "" {
-		return false
-	}
-	if h.tryReplay(c, key, model, mediaType, body) {
-		return true
-	}
-	if middleware.RejectFalVideoSpendingDenial(c) {
-		return true
-	}
-	_, found, err := h.tasks.ResolveRoute(c.Request.Context(), *key.GroupID, model)
-	if err != nil {
-		writeFalVideoServiceError(c, err, "")
-		return true
-	}
-	if !found {
-		return false
-	}
-
-	if _, subject, ok := falVideoIdentity(c); ok {
-		h.create(c, key, subject, model, mediaType, body)
-	}
-	return true
 }
 
 func (h *FalVideoHandler) tryReplay(c *gin.Context, key *service.APIKey, model, mediaType string, body []byte) bool {
@@ -124,29 +97,7 @@ func (h *FalVideoHandler) tryReplay(c *gin.Context, key *service.APIKey, model, 
 	return true
 }
 
-func peekFalVideoBody(req *http.Request) ([]byte, error) {
-	if preread, ok := req.Body.(*httputil.PrereadBody); ok {
-		return preread.Bytes(), nil
-	}
-	// The gateway normally pre-reads the body. Preserve the original wire bytes
-	// and headers on other callers, including bodies that fail to decode.
-	original := req.Body
-	var consumed bytes.Buffer
-	peek := new(http.Request)
-	*peek = *req
-	peek.Header = req.Header.Clone()
-	peek.Body = io.NopCloser(io.TeeReader(original, &consumed))
-	body, err := httputil.ReadRequestBodyWithPrealloc(peek)
-	req.Body = falVideoReplayBody{Reader: io.MultiReader(&consumed, original), Closer: original}
-	return body, err
-}
-
-type falVideoReplayBody struct {
-	io.Reader
-	io.Closer
-}
-
-func (h *FalVideoHandler) create(c *gin.Context, key *service.APIKey, subject middleware.AuthSubject, model, mediaType string, body []byte) {
+func (h *FalVideoHandler) create(c *gin.Context, key *service.APIKey, subject middleware.AuthSubject, model, routingModel, mediaType string, body []byte) {
 	if key.Status == service.StatusAPIKeyExpired || key.IsExpired() {
 		falVideoError(c, http.StatusForbidden, "authentication_error", "API_KEY_EXPIRED", "API key has expired", "")
 		return
@@ -174,7 +125,7 @@ func (h *FalVideoHandler) create(c *gin.Context, key *service.APIKey, subject mi
 		return
 	}
 	req.Model, req.UserID, req.APIKeyID, req.GroupID = model, subject.UserID, key.ID, *key.GroupID
-	req.APIKey = key
+	req.APIKey, req.RoutingModel = key, routingModel
 	if values := c.Request.Header.Values("Idempotency-Key"); len(values) > 1 {
 		falVideoError(c, http.StatusBadRequest, "invalid_request_error", "", "Send only one Idempotency-Key header", "")
 		return

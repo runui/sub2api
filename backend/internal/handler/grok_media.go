@@ -114,6 +114,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 	requestModel := requestInfo.Model
 	routingModel := service.NormalizeGrokMediaModelForEndpoint(endpoint, requestModel, requestInfo.HasInputImage())
+	if endpoint == service.GrokMediaEndpointVideosGenerations {
+		if target, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok {
+			routingModel = target
+		}
+	}
 	if endpoint.IsGenerationRequest() && strings.TrimSpace(requestModel) == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return
@@ -425,7 +430,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
-				if endpoint.IsVideoLookupRequest() {
+				// A server error may occur after a video was enqueued. Only retry
+				// creation on a definitive rate-limit rejection.
+				if endpoint.IsVideoLookupRequest() || (isGrokVideoCreateEndpoint(endpoint) && failoverErr.StatusCode != http.StatusTooManyRequests) {
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
@@ -560,6 +567,9 @@ func (h *OpenAIGatewayHandler) ensureGrokMediaAccountEligibility(ctx context.Con
 func grokMediaRequiredCapability(endpoint service.GrokMediaEndpoint) service.OpenAIEndpointCapability {
 	if endpoint.IsSeedance() {
 		return service.OpenAIEndpointCapabilitySeedance
+	}
+	if endpoint == service.GrokMediaEndpointVideosGenerations {
+		return service.OpenAIEndpointCapabilityGrokVideoGeneration
 	}
 	if endpoint.IsGenerationRequest() {
 		return service.OpenAIEndpointCapabilityGrokMediaGeneration

@@ -1531,6 +1531,12 @@
         <label for="create-fal-api-key" class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
         <input id="create-fal-api-key" v-model="apiKeyValue" type="password" required autocomplete="new-password" class="input font-mono" />
         <p class="input-hint">{{ t('admin.accounts.falRouteHint') }}</p>
+        <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="mt-2 flex items-center gap-2">
+          <input v-model="mapping.from" :aria-label="t('admin.accounts.requestModel')" :placeholder="t('admin.accounts.requestModel')" class="input min-w-0" />
+          <input v-model="mapping.to" :aria-label="t('admin.accounts.actualModel')" placeholder="xai/grok-imagine-video/v1.5" class="input min-w-0" />
+          <button type="button" class="btn btn-secondary" @click="removeModelMapping(index)">{{ t('common.remove') }}</button>
+        </div>
+        <button type="button" class="btn btn-secondary mt-2" @click="addModelMapping">{{ t('admin.accounts.addMapping') }}</button>
       </div>
 
       <!-- API Key input (Antigravity and fal have their own fields) -->
@@ -3749,7 +3755,7 @@
         </div>
       </div>
 
-      <div v-if="form.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <!-- Mixed Scheduling (only for antigravity accounts) -->
         <div v-if="form.platform === 'antigravity'" class="flex items-center gap-2">
           <label class="flex cursor-pointer items-center gap-2">
@@ -5660,7 +5666,7 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
       Object.values(modelMapping).some((target) =>
         typeof target === 'string' && target.trim() !== '' && !target.includes('*')
       )
-    if (upstreamModelsPreviewed.value || hasConcreteMappedTarget) {
+    if (payload.platform !== 'fal' && (upstreamModelsPreviewed.value || hasConcreteMappedTarget)) {
       try {
         const result = await adminAPI.accounts.syncUpstreamModels(account.id)
         const warnings = result.warnings ?? []
@@ -6054,15 +6060,17 @@ const handleSubmit = async () => {
       appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
       return
     }
+    const mapping = buildModelMappingObject('mapping', [], modelMappings.value)
     await doCreateAccount({
       name: form.name.trim(),
       notes: form.notes,
       platform: 'fal',
       type: 'apikey',
-      credentials: { api_key: apiKey },
+      credentials: { api_key: apiKey, ...(mapping ? { model_mapping: mapping } : {}) },
       proxy_id: form.proxy_id,
       concurrency: form.concurrency,
-      priority: 1,
+      group_ids: form.group_ids,
+      priority: form.priority,
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value
     })

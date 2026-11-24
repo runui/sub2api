@@ -1055,7 +1055,7 @@
           </p>
         </div>
 
-        <!-- 视频生成计费配置（仅 Grok 平台） -->
+        <!-- 视频生成计费配置 -->
         <div
           v-if="supportsVideoPricingPlatform(createForm.platform)"
           class="border-t pt-4"
@@ -2722,7 +2722,7 @@
           </p>
         </div>
 
-        <!-- 视频生成计费配置（仅 Grok 平台） -->
+        <!-- 视频生成计费配置 -->
         <div
           v-if="supportsVideoPricingPlatform(editForm.platform)"
           class="border-t pt-4"
@@ -4684,11 +4684,14 @@ const platformFilterOptions = computed(() => [
 ]);
 
 const compositeRoutePlatformOptions = computed(() => [
-  ...CONCRETE_PLATFORM_OPTIONS,
+  ...(compositeRouteForm.endpoint === "videos"
+    ? [...CONCRETE_PLATFORM_OPTIONS.filter(({ value }) => value === "grok"), { value: "fal", label: "fal" }]
+    : CONCRETE_PLATFORM_OPTIONS),
 ]);
 
 const compositeRouteEndpointOptions = computed(() => [
   { value: "any", label: t("admin.groups.compositeRoutes.endpoints.any") },
+  { value: "videos", label: t("admin.groups.compositeRoutes.endpoints.videos") },
   {
     value: "messages",
     label: t("admin.groups.compositeRoutes.endpoints.messages"),

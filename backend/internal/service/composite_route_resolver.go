@@ -28,7 +28,7 @@ func (d CompositeRouteDecision) OAuthAmbiguous() bool {
 	return !d.Matched && d.Reason == CompositeRouteReasonOAuthAmbiguous
 }
 
-// AmbiguousMessage is the client-facing rejection for an OAuthAmbiguous decision.
+// AmbiguousMessage explains why an explicit route is needed for this model.
 func (d CompositeRouteDecision) AmbiguousMessage() string {
 	return fmt.Sprintf("Model %q is mapped on multiple provider platforms in this group; configure an explicit composite route", d.PublicModel)
 }
@@ -36,6 +36,7 @@ func (d CompositeRouteDecision) AmbiguousMessage() string {
 type CompositeRouteResolver struct {
 	repo                   CompositeModelRouteRepository
 	modelOwnershipResolver CompositeModelOwnershipResolver
+	videoOwnershipResolver CompositeModelOwnershipResolver
 }
 
 func NewCompositeRouteResolver(repo CompositeModelRouteRepository) *CompositeRouteResolver {
@@ -130,25 +131,32 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 		}
 	}
 
-	if r != nil && r.modelOwnershipResolver != nil && groupID > 0 {
-		ownership, err := r.modelOwnershipResolver(ctx, groupID, model)
+	var ownershipResolver CompositeModelOwnershipResolver
+	if r != nil {
+		ownershipResolver = r.modelOwnershipResolver
+		if endpoint == CompositeRouteEndpointVideos {
+			ownershipResolver = r.videoOwnershipResolver
+		}
+	}
+	if ownershipResolver != nil && groupID > 0 {
+		ownership, err := ownershipResolver(ctx, groupID, model)
 		if err != nil {
 			// A recognizable model can still use the existing detector when the
 			// account catalog is temporarily unavailable. Unknown aliases cannot.
-			if _, detectable := DetectModelPlatform(model); !detectable {
+			if _, detectable := DetectModelPlatform(model); endpoint == CompositeRouteEndpointVideos || !detectable {
 				return decision, fmt.Errorf("resolve account model ownership: %w", err)
 			}
 		} else if ownership.Ambiguous {
 			decision.Reason = CompositeRouteReasonAmbiguous
 			// 未解析的请求由下游 handler 按模型名前缀兜底选平台；只有兜底落在
 			// OpenAI 网关族时，OpenAI 网关 OAuth 声明方才会被误送进 Anthropic 管线。
-			if guessed, ok := DetectModelPlatform(model); ok && ownership.OpenAIGatewayOAuthClaimed && domain.UsesOpenAIGateway(guessed) {
+			if guessed, ok := DetectModelPlatform(model); endpoint != CompositeRouteEndpointVideos && ok && ownership.OpenAIGatewayOAuthClaimed && domain.UsesOpenAIGateway(guessed) {
 				decision.Reason = CompositeRouteReasonOAuthAmbiguous
 			}
 			return decision, nil
 		} else if ownership.Matched {
 			platform := strings.TrimSpace(ownership.TargetPlatform)
-			if !isConcreteRequestPlatform(platform) {
+			if !isConcreteRequestPlatform(platform) && !(endpoint == CompositeRouteEndpointVideos && platform == PlatformFal) {
 				decision.Reason = "account model ownership has no concrete target platform"
 				return decision, nil
 			}
@@ -164,7 +172,7 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 		}
 	}
 
-	if platform, ok := DetectModelPlatform(model); ok {
+	if platform, ok := DetectModelPlatform(model); endpoint != CompositeRouteEndpointVideos && ok {
 		return CompositeRouteDecision{
 			Matched:        true,
 			Source:         CompositeRouteSourceDetector,
@@ -176,6 +184,9 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 		}, nil
 	}
 	decision.Reason = "no explicit route or built-in detector match"
+	if endpoint == CompositeRouteEndpointVideos {
+		decision.Reason = "no video route or account model match"
+	}
 	return decision, nil
 }
 
@@ -193,6 +204,11 @@ func matchCompositeRoute(routes []CompositeModelRoute, model, endpoint string) (
 	candidates := make([]candidate, 0, len(routes))
 	for _, route := range routes {
 		route.Endpoint = normalizeCompositeRouteEndpoint(route.Endpoint)
+		// A catch-all text route (even one targeting Grok) does not declare
+		// video capability and must not shadow a video account declaration.
+		if endpoint == CompositeRouteEndpointVideos && (route.Endpoint != endpoint || !supportsVideoRoutePlatform(route.TargetPlatform)) {
+			continue
+		}
 		if route.Endpoint != endpoint && route.Endpoint != CompositeRouteEndpointAny {
 			continue
 		}

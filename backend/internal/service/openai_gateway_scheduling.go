@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
@@ -391,12 +392,19 @@ func openAICompatibleAccountEligibilityFailureReasonBeforeProfit(ctx context.Con
 	if account == nil {
 		return "account_nil"
 	}
+	// Video model ownership is group-scoped even in simple mode, where the
+	// generic scheduling pool may contain accounts from other groups.
+	if requiredCapability == OpenAIEndpointCapabilityGrokVideoGeneration {
+		if group, ok := ctx.Value(ctxkey.Group).(*Group); ok && group != nil && !openAIStickyAccountMatchesGroup(account, &group.ID) {
+			return "group_mismatch"
+		}
+	}
 	// account_model composite routes publish an alias that only accounts with an
 	// explicit model mapping own. Both scheduler modes (advanced and legacy) must
 	// enforce ownership before any priority/sticky/transport consideration; a
 	// non-owner would forward the raw public alias and get model_not_found or
 	// hit an unrelated same-name upstream model.
-	if source, ok := CompositeRouteSourceFromContext(ctx); ok && source == CompositeRouteSourceAccount {
+	if source, ok := CompositeRouteSourceFromContext(ctx); ok && source == CompositeRouteSourceAccount && requiredCapability != OpenAIEndpointCapabilityGrokVideoGeneration {
 		if publicModel, modelOK := RequestedPublicModelFromContext(ctx); modelOK && !explicitModelMappingClaims(*account, publicModel) {
 			return "account_model_not_owned"
 		}
@@ -441,6 +449,9 @@ func openAICompatibleAccountEligibilityFailureReasonBeforeProfit(ctx context.Con
 		}
 	}
 	if requestedModel != "" && !supportsOpenAIRequestModel(account, requestedModel, requireCompact) {
+		return "model_not_supported"
+	}
+	if requiredCapability == OpenAIEndpointCapabilityGrokVideoGeneration && !account.SupportsNativeVideoModel(requestedModel) {
 		return "model_not_supported"
 	}
 	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {

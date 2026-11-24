@@ -350,7 +350,7 @@ describe('EditAccountModal', () => {
 
     expect(wrapper.text()).toContain('admin.accounts.falRouteHint')
     expect(wrapper.text()).not.toContain('admin.accounts.baseUrl')
-    expect(wrapper.find('[data-testid="group-selector"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="group-selector"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
 
     await wrapper.get('[data-tour="edit-account-form-name"]').setValue('fal video')
@@ -362,10 +362,10 @@ describe('EditAccountModal', () => {
     const [id, payload] = updateAccountMock.mock.calls[0]
     expect(id).toBe(account.id)
     expect(payload.name).toBe('fal video')
-    expect(payload).not.toHaveProperty('group_ids')
+    expect(payload.group_ids).toEqual([])
     expect(payload).not.toHaveProperty('upstream_billing_probe_enabled')
     if (replacement) {
-      expect(payload.credentials).toEqual({ api_key: 'replacement' })
+      expect(payload.credentials).toEqual({ api_key: 'replacement', model_mapping: {} })
     } else {
       expect(payload).not.toHaveProperty('credentials')
     }

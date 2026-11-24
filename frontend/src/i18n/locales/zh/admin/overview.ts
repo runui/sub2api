@@ -1212,6 +1212,7 @@ export default {
           any: '任意',
           messages: 'Messages',
           countTokens: 'Count Tokens',
+          videos: '视频生成',
           responses: 'Responses',
           chatCompletions: 'Chat Completions',
           embeddings: 'Embeddings',

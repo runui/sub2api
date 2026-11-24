@@ -1,7 +1,9 @@
 package routes
 
 import (
+	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,7 +45,7 @@ func newGatewayRoutesTestRouterWithConfig(cfg *config.Config, platform ...string
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
 				GroupID: &groupID,
-				Group:   &service.Group{Platform: groupPlatform},
+				Group:   &service.Group{ID: groupID, Platform: groupPlatform},
 			})
 			c.Next()
 		}),
@@ -165,6 +167,11 @@ func TestGatewayRoutesGrokImagesAndVideosPathsAreRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
+		if path == "/videos" || path == "/v1/videos" || strings.HasSuffix(path, "/videos/generations") {
+			require.Equal(t, http.StatusNotFound, w.Code)
+			require.Contains(t, w.Body.String(), "No video route for this model")
+			continue
+		}
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit Grok media handler", path)
 		require.NotContains(t, w.Body.String(), "not supported for this platform")
 	}
@@ -362,11 +369,15 @@ func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
 
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
-		require.Contains(t, w.Body.String(), "Videos API is not supported for this platform")
+		if tc.method == http.MethodPost && compositeRouteEndpointForPath(tc.path) == service.CompositeRouteEndpointVideos {
+			require.Contains(t, w.Body.String(), "No video route for this model")
+		} else {
+			require.Contains(t, w.Body.String(), "Videos API is not supported for this platform")
+		}
 	}
 }
 
-func TestGatewayRoutesCompositeVideoGenerationAllowed(t *testing.T) {
+func TestGatewayRoutesCompositeVideoGenerationRequiresModelMatch(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformComposite)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"grok-imagine-video-1.5","prompt":"waves"}`))
@@ -374,8 +385,36 @@ func TestGatewayRoutesCompositeVideoGenerationAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
-	require.NotEqual(t, http.StatusNotFound, w.Code)
-	require.NotContains(t, w.Body.String(), "not supported")
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "No video route for this model")
+}
+
+func TestGatewayRoutesVideoAliasesDispatchExplicitModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(1)
+	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{{
+		GroupID: groupID, PublicModel: "public-video", UpstreamModel: "fal-mapping-key", TargetPlatform: service.PlatformFal,
+		Endpoint: service.CompositeRouteEndpointVideos, MatchType: service.CompositeRouteMatchExact, Enabled: true,
+	}}})
+	router := gin.New()
+	RegisterGatewayRoutes(router, &handler.Handlers{}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformComposite}})
+		c.Next()
+	}), nil, nil, nil, nil, resolver, &config.Config{Gateway: config.GatewayConfig{MaxBodySize: 1024 * 1024}})
+
+	for _, path := range []string{"/v1/videos", "/v1/videos/generations", "/videos", "/videos/generations"} {
+		var body bytes.Buffer
+		form := multipart.NewWriter(&body)
+		require.NoError(t, form.WriteField("model", "public-video"))
+		require.NoError(t, form.Close())
+		req := httptest.NewRequest(http.MethodPost, path, &body)
+		req.Header.Set("Content-Type", form.FormDataContentType())
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		// No fal service is installed: its 503 distinguishes dispatch from an unmatched route.
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, "%s: %s", path, w.Body.String())
+		require.NotContains(t, w.Body.String(), "Failed to resolve video model route")
+	}
 }
 
 func TestGatewayRoutesCompositeOpenAIOnlyEndpointsRequireOpenAITarget(t *testing.T) {

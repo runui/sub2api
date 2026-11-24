@@ -1215,6 +1215,7 @@ export default {
           any: 'Any',
           messages: 'Messages',
           countTokens: 'Count Tokens',
+          videos: 'Video generation',
           responses: 'Responses',
           chatCompletions: 'Chat Completions',
           embeddings: 'Embeddings',

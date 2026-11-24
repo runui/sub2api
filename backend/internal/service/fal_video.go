@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -16,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideo"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -26,8 +24,9 @@ import (
 
 const (
 	falVideoIDPrefix        = "falvid_"
-	falVideoTextEndpoint    = "xai/grok-imagine-video/v1.5/text-to-video"
-	falVideoImageEndpoint   = "xai/grok-imagine-video/v1.5/image-to-video"
+	falVideoTextEndpoint    = falVideoUpstreamModel + "/text-to-video"
+	falVideoImageEndpoint   = falVideoUpstreamModel + "/image-to-video"
+	falVideoUpstreamModel   = "xai/grok-imagine-video/v1.5"
 	falVideoHTTPTimeout     = 20 * time.Second
 	falVideoPollInterval    = 5 * time.Second
 	falVideoJobDeadline     = 2 * time.Hour
@@ -55,6 +54,7 @@ var (
 type FalVideoRequest struct {
 	UserID, APIKeyID, GroupID, SubscriptionID                        int64
 	Model, Prompt, ImageURL, Resolution, AspectRatio, IdempotencyKey string
+	RoutingModel                                                     string
 	Duration                                                         int
 	APIKey                                                           *APIKey
 	Subscription                                                     *UserSubscription
@@ -78,8 +78,6 @@ type falVideoStore interface {
 }
 
 type FalVideoService struct {
-	channels    *ChannelService
-	routes      map[int64]map[string]config.FalVideoRoute
 	store       falVideoStore
 	accounts    AccountRepository
 	transport   HTTPUpstream
@@ -89,21 +87,16 @@ type FalVideoService struct {
 	cache       *BillingCacheService
 	keys        *APIKeyService
 	concurrency *ConcurrencyService
+	gateway     *GatewayService
 	stop        context.CancelFunc
 	worker      sync.WaitGroup
 }
 
-func ProvideFalVideoService(cfg *config.Config, db *sql.DB, accounts AccountRepository, transport HTTPUpstream,
-	billing FalVideoBilling, usage UsageLogRepository, cache *BillingCacheService, keys *APIKeyService, concurrency *ConcurrencyService, channels *ChannelService) *FalVideoService {
-	s := &FalVideoService{routes: make(map[int64]map[string]config.FalVideoRoute), store: falvideotask.NewStore(db), accounts: accounts,
-		transport: transport, billing: billing, usage: usage, cache: cache, keys: keys, concurrency: concurrency, channels: channels}
-	for _, route := range cfg.FalVideo.Routes {
-		if s.routes[route.GroupID] == nil {
-			s.routes[route.GroupID] = make(map[string]config.FalVideoRoute)
-		}
-		s.routes[route.GroupID][route.Model] = route
-	}
-	// Keep recovering existing tasks even when new submissions are disabled.
+func ProvideFalVideoService(db *sql.DB, accounts AccountRepository, transport HTTPUpstream,
+	billing FalVideoBilling, usage UsageLogRepository, cache *BillingCacheService, keys *APIKeyService, concurrency *ConcurrencyService, gateway *GatewayService) *FalVideoService {
+	s := &FalVideoService{store: falvideotask.NewStore(db), accounts: accounts,
+		transport: transport, billing: billing, usage: usage, cache: cache, keys: keys, concurrency: concurrency, gateway: gateway}
+	// Recover persisted tasks independently of current model routing.
 	ctx, stop := context.WithCancel(context.Background())
 	s.stop = stop
 	s.worker.Add(1)
@@ -120,60 +113,52 @@ func (s *FalVideoService) Stop() {
 
 func IsFalVideoTaskID(id string) bool { return strings.HasPrefix(id, falVideoIDPrefix) }
 
-func (s *FalVideoService) ResolveRoute(ctx context.Context, groupID int64, model string) (config.FalVideoRoute, bool, error) {
-	if s.channels != nil {
-		route, found, managed, err := s.channels.FalVideoRoute(ctx, groupID, model)
-		if err != nil {
-			return config.FalVideoRoute{}, false, ErrFalVideoTemporarilyUnavailable
-		}
-		if managed {
-			return route, found, nil
-		}
+func falVideoAccountModel(account *Account, model string) (string, bool) {
+	if account == nil || account.Platform != PlatformFal || account.Type != AccountTypeAPIKey || !hasFalVideoAPIKey(account.Credentials) || !explicitModelMappingClaims(*account, model) {
+		return "", false
 	}
-	route, ok := s.routes[groupID][model]
-	route.PriceUSDPerSecond = maps.Clone(route.PriceUSDPerSecond)
-	return route, ok, nil
+	upstream := strings.TrimSpace(account.GetMappedModel(model))
+	return upstream, upstream == falVideoUpstreamModel
 }
 
-func falVideoInput(req FalVideoRequest, route config.FalVideoRoute) (string, falvideo.Input, float64, error) {
+func falVideoInput(req FalVideoRequest) (falvideo.Input, error) {
 	input := falvideo.Input{Prompt: req.Prompt, ImageURL: req.ImageURL, Duration: req.Duration, Resolution: req.Resolution, AspectRatio: req.AspectRatio}
 	if strings.TrimSpace(input.Prompt) == "" || len(input.Prompt) > 32<<10 || len(req.IdempotencyKey) > 128 || strings.ContainsAny(req.IdempotencyKey, "\r\n\x00") {
-		return "", input, 0, fmt.Errorf("%w: invalid prompt or Idempotency-Key", ErrFalVideoInvalid)
+		return input, fmt.Errorf("%w: invalid prompt or Idempotency-Key", ErrFalVideoInvalid)
 	}
 	if input.Duration == 0 {
 		input.Duration = 6
 	}
 	if input.Duration < 1 || input.Duration > 15 {
-		return "", input, 0, fmt.Errorf("%w: duration must be 1 to 15 seconds", ErrFalVideoInvalid)
+		return input, fmt.Errorf("%w: duration must be 1 to 15 seconds", ErrFalVideoInvalid)
 	}
 	if input.Resolution == "" {
 		input.Resolution = "720p"
 	}
-	price := route.PriceUSDPerSecond[input.Resolution]
-	if price <= 0 {
-		return "", input, 0, fmt.Errorf("%w: resolution is not enabled for this route", ErrFalVideoInvalid)
+	switch input.Resolution {
+	case "480p", "720p", "1080p":
+	default:
+		return input, fmt.Errorf("%w: unsupported resolution", ErrFalVideoInvalid)
 	}
-	endpoint := falVideoTextEndpoint
 	if input.ImageURL != "" {
-		endpoint = falVideoImageEndpoint
 		u, err := url.Parse(input.ImageURL)
 		if err != nil || len(input.ImageURL) > 8192 || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") {
-			return "", input, 0, fmt.Errorf("%w: image must be an HTTPS URL", ErrFalVideoInvalid)
+			return input, fmt.Errorf("%w: image must be an HTTPS URL", ErrFalVideoInvalid)
 		}
 		if input.AspectRatio != "" {
-			return "", input, 0, fmt.Errorf("%w: aspect_ratio is not supported with image input", ErrFalVideoInvalid)
+			return input, fmt.Errorf("%w: aspect_ratio is not supported with image input", ErrFalVideoInvalid)
 		}
 	} else {
 		switch input.AspectRatio {
 		case "", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "21:9", "5:2":
 		default:
-			return "", input, 0, fmt.Errorf("%w: unsupported aspect_ratio", ErrFalVideoInvalid)
+			return input, fmt.Errorf("%w: unsupported aspect_ratio", ErrFalVideoInvalid)
 		}
 		if input.AspectRatio == "" {
 			input.AspectRatio = "16:9"
 		}
 	}
-	return endpoint, input, price, nil
+	return input, nil
 }
 
 func (s *FalVideoService) Replay(ctx context.Context, req FalVideoRequest) (falvideotask.Task, bool, error) {
@@ -188,9 +173,8 @@ func (s *FalVideoService) Replay(ctx context.Context, req FalVideoRequest) (falv
 	if err != nil {
 		return empty, false, ErrFalVideoTemporarilyUnavailable
 	}
-	allocatedPrice := config.FalVideoRoute{PriceUSDPerSecond: map[string]float64{task.Resolution: task.UnitPriceUSD}}
-	endpoint, input, _, err := falVideoInput(req, allocatedPrice)
-	if err != nil || task.Fingerprint != falVideoFingerprint(req.Model, endpoint, input) {
+	input, err := falVideoInput(req)
+	if err != nil || task.Fingerprint != falVideoFingerprint(req.Model, input) {
 		return empty, false, ErrFalVideoConflict
 	}
 	return task, true, falVideoReplayError(task)
@@ -203,32 +187,54 @@ func falVideoReplayError(task falvideotask.Task) error {
 	return nil
 }
 
-func falVideoFingerprint(model, endpoint string, input falvideo.Input) string {
+func falVideoFingerprint(model string, input falvideo.Input) string {
 	payload, _ := json.Marshal(input) // Input consists exclusively of strings and integers.
-	hash := sha256.Sum256(append([]byte(model+"\x00"+endpoint+"\x00"), payload...))
+	// Idempotency describes the client input, not current routing or pricing.
+	hash := sha256.Sum256(append([]byte(model+"\x00"), payload...))
 	return hex.EncodeToString(hash[:])
 }
 
 func (s *FalVideoService) Submit(ctx context.Context, req FalVideoRequest) (falvideotask.Task, error) {
 	var empty falvideotask.Task
-	route, ok, err := s.ResolveRoute(ctx, req.GroupID, req.Model)
-	if err != nil {
-		return empty, err
-	}
-	if !ok || req.UserID <= 0 || req.APIKeyID <= 0 {
+	if req.GroupID <= 0 || req.UserID <= 0 || req.APIKeyID <= 0 || req.APIKey == nil || req.APIKey.Group == nil || req.APIKey.Group.ID != req.GroupID {
 		return empty, ErrFalVideoNotFound
 	}
-	if req.SubscriptionID != 0 || req.Subscription != nil || (req.APIKey != nil && req.APIKey.Group != nil && req.APIKey.Group.IsSubscriptionType()) {
+	if req.SubscriptionID != 0 || req.Subscription != nil || req.APIKey.Group.IsSubscriptionType() {
 		return empty, fmt.Errorf("%w: fal video requires a balance-billed group", ErrFalVideoInvalid)
 	}
-	endpoint, input, price, err := falVideoInput(req, route)
+	if replay, found, err := s.Replay(ctx, req); found || err != nil {
+		return replay, err
+	}
+	input, err := falVideoInput(req)
 	if err != nil {
 		return empty, err
 	}
-	fingerprint := falVideoFingerprint(req.Model, endpoint, input)
+	routingModel := firstNonEmpty(req.RoutingModel, req.Model)
+	group := req.APIKey.Group
+	// An arbitrary routing alias still prices against the fal adapter's model
+	// family. Freeze the effective rate before reserving, just like the duration.
+	price := group.GetVideoPriceForModel(VideoPriceFamilyGrokImagineVideo15, input.Resolution)
+	multiplier := group.RateMultiplier
+	if s.gateway != nil && !group.VideoRateIndependent {
+		multiplier = s.gateway.ResolveUserGroupRateMultiplier(ctx, req.UserID, req.GroupID, multiplier)
+	}
+	unitPrice := 0.0
+	if price != nil {
+		unitPrice = *price * resolveVideoRateMultiplier(req.APIKey, multiplier)
+	}
+	amount := QuantizeUsageBillingAmount(unitPrice * float64(input.Duration))
+	if amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return empty, fmt.Errorf("%w: configure a positive video price for this model and resolution", ErrFalVideoInvalid)
+	}
+	account, endpoint, release, err := s.selectAccount(ctx, req.GroupID, routingModel, input.ImageURL != "")
+	if err != nil {
+		return empty, err
+	}
+	defer release()
+	fingerprint := falVideoFingerprint(req.Model, input)
 	task := falvideotask.Task{ID: falVideoIDPrefix + uuid.NewString(), Model: req.Model, Endpoint: endpoint, Resolution: input.Resolution,
-		UserID: req.UserID, APIKeyID: req.APIKeyID, GroupID: req.GroupID, AccountID: route.AccountID,
-		Duration: input.Duration, UnitPriceUSD: price, IdempotencyKey: req.IdempotencyKey, Fingerprint: fingerprint}
+		UserID: req.UserID, APIKeyID: req.APIKeyID, GroupID: req.GroupID, AccountID: account.ID,
+		Duration: input.Duration, UnitPriceUSD: unitPrice, IdempotencyKey: req.IdempotencyKey, Fingerprint: fingerprint}
 	task, created, err := s.store.Create(ctx, task)
 	if err != nil {
 		return empty, ErrFalVideoTemporarilyUnavailable
@@ -243,19 +249,6 @@ func (s *FalVideoService) Submit(ctx context.Context, req FalVideoRequest) (falv
 	// A disconnected downstream must not prevent recording the POST outcome.
 	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*falVideoHTTPTimeout)
 	defer cancel()
-	account, err := s.account(work, task.AccountID)
-	if err != nil || !account.IsSchedulable() {
-		s.reject(work, task.ID, "account_unavailable")
-		return task, ErrFalVideoTemporarilyUnavailable
-	}
-	if s.concurrency != nil {
-		slot, err := s.concurrency.AcquireAccountSlot(work, account.ID, account.Concurrency)
-		if err != nil || slot == nil || !slot.Acquired {
-			s.reject(work, task.ID, "account_busy")
-			return task, ErrFalVideoTemporarilyUnavailable
-		}
-		defer slot.ReleaseFunc()
-	}
 	if err := s.billing.Reserve(work, task); err != nil {
 		s.reject(work, task.ID, "reservation_failed")
 		if errors.Is(err, ErrBatchImageInsufficientBalance) {
@@ -279,6 +272,7 @@ func (s *FalVideoService) Submit(ctx context.Context, req FalVideoRequest) (falv
 			}
 			return task, ErrFalVideoUpstream
 		}
+		// A failed response does not prove the upstream did not enqueue the job.
 		s.reject(work, task.ID, "submission_unknown")
 		return task, ErrFalVideoSubmissionUnknown
 	}
@@ -289,6 +283,39 @@ func (s *FalVideoService) Submit(ctx context.Context, req FalVideoRequest) (falv
 	}
 	task.State = "queued"
 	return task, nil
+}
+
+func (s *FalVideoService) selectAccount(ctx context.Context, groupID int64, model string, hasImage bool) (*Account, string, func(), error) {
+	accounts, err := s.accounts.ListSchedulableByGroupIDAndPlatform(ctx, groupID, PlatformFal)
+	if err != nil {
+		return nil, "", nil, ErrFalVideoTemporarilyUnavailable
+	}
+	// The repository orders by group priority, then account priority. Only
+	// fall through to another account before any task or upstream side effect.
+	for i := range accounts {
+		account := &accounts[i]
+		upstream, ok := falVideoAccountModel(account, model)
+		if !ok || !account.IsSchedulable() {
+			continue
+		}
+		// The mapped model was checked against the adapter's allowlist. Never
+		// interpret a client model name as an arbitrary fal queue path.
+		endpoint := upstream + "/text-to-video"
+		if hasImage {
+			endpoint = upstream + "/image-to-video"
+		}
+		if s.concurrency == nil {
+			return account, endpoint, func() {}, nil
+		}
+		slot, err := s.concurrency.AcquireAccountSlot(ctx, account.ID, account.Concurrency)
+		if err != nil {
+			return nil, "", nil, ErrFalVideoTemporarilyUnavailable
+		}
+		if slot != nil && slot.Acquired {
+			return account, endpoint, slot.ReleaseFunc, nil
+		}
+	}
+	return nil, "", nil, ErrFalVideoTemporarilyUnavailable
 }
 
 func (s *FalVideoService) reject(ctx context.Context, id, code string) {

@@ -969,6 +969,7 @@ func NewGatewayService(
 	}
 	if compositeResolver != nil {
 		compositeResolver.SetModelOwnershipResolver(svc.resolveCompositeModelOwnership)
+		compositeResolver.videoOwnershipResolver = svc.resolveVideoModelOwnership
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,

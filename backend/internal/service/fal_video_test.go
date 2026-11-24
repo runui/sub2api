@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideo"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
 	"github.com/stretchr/testify/require"
@@ -158,15 +157,13 @@ func (u *falVideoTestUsage) Create(_ context.Context, log *UsageLog) (bool, erro
 
 func falVideoFixture() (*FalVideoService, *falVideoTestStore, *falVideoTestBilling, *falVideoTestUsage, FalVideoRequest) {
 	req := FalVideoRequest{Model: "configured-video", Prompt: "a lighthouse at dusk", UserID: 10, APIKeyID: 20, GroupID: 30, IdempotencyKey: "generation-key"}
-	route := config.FalVideoRoute{GroupID: req.GroupID, AccountID: 40, Model: req.Model,
-		PriceUSDPerSecond: map[string]float64{"720p": 0.25, "480p": 0.125}}
+	req.APIKey = &APIKey{Group: &Group{ID: req.GroupID, RateMultiplier: 1, VideoPrice720P: testVideoPrice(0.25), VideoPrice480P: testVideoPrice(0.125)}}
 	store := &falVideoTestStore{now: time.Now()}
 	billing, usage := &falVideoTestBilling{}, &falVideoTestUsage{}
 	s := &FalVideoService{
-		routes: map[int64]map[string]config.FalVideoRoute{req.GroupID: {req.Model: route}},
-		store:  store, billing: billing, usage: usage,
-		accounts: falVideoTestAccounts{account: &Account{ID: route.AccountID, Platform: PlatformFal, Type: AccountTypeAPIKey,
-			Status: StatusActive, Schedulable: true, Concurrency: 3, Credentials: map[string]any{"api_key": falVideoTestKey}}},
+		store: store, billing: billing, usage: usage,
+		accounts: falVideoTestAccounts{account: &Account{ID: 40, Platform: PlatformFal, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: 3, Credentials: map[string]any{"api_key": falVideoTestKey, "model_mapping": map[string]any{req.Model: falVideoUpstreamModel}}}},
 	}
 	return s, store, billing, usage, req
 }
@@ -228,19 +225,10 @@ func TestFalVideoSubmitMapsInputAndPersistsBeforeAck(t *testing.T) {
 func TestFalVideoModelIsolationAndOwnership(t *testing.T) {
 	s, store, _, _, req := falVideoFixture()
 	ctx := context.Background()
-	for _, test := range []struct {
-		group int64
-		model string
-		found bool
-	}{{req.GroupID, req.Model, true}, {req.GroupID, falVideoTextEndpoint, false}, {req.GroupID + 1, req.Model, false}} {
-		_, found, err := s.ResolveRoute(ctx, test.group, test.model)
-		require.NoError(t, err)
-		require.Equal(t, test.found, found)
-	}
 	wrong := req
-	wrong.Model = falVideoTextEndpoint
+	wrong.RoutingModel = falVideoTextEndpoint
 	_, err := s.Submit(ctx, wrong)
-	require.ErrorIs(t, err, ErrFalVideoNotFound)
+	require.ErrorIs(t, err, ErrFalVideoTemporarilyUnavailable)
 	wrong = req
 	wrong.GroupID++
 	_, err = s.Submit(ctx, wrong)
@@ -258,6 +246,63 @@ func TestFalVideoModelIsolationAndOwnership(t *testing.T) {
 	}
 	_, err = s.Get(ctx, "falvid_missing", req.UserID, req.APIKeyID, req.GroupID)
 	require.ErrorIs(t, err, ErrFalVideoNotFound)
+}
+
+type falVideoPoolRepo struct {
+	AccountRepository
+	accounts []Account
+}
+
+func (r falVideoPoolRepo) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, _ string) ([]Account, error) {
+	return r.accounts, nil
+}
+
+type falVideoSlots struct {
+	ConcurrencyCache
+	attempted, released []int64
+}
+
+func (s *falVideoSlots) AcquireAccountSlot(_ context.Context, id int64, _ int, _ string) (bool, error) {
+	s.attempted = append(s.attempted, id)
+	return id == 41, nil
+}
+
+func (s *falVideoSlots) ReleaseAccountSlot(_ context.Context, id int64, _ string) error {
+	s.released = append(s.released, id)
+	return nil
+}
+
+func TestFalVideoBusyAccountFallsBackAndQuoteSurvivesReplay(t *testing.T) {
+	s, _, billing, _, req := falVideoFixture()
+	first := s.accounts.(falVideoTestAccounts).account
+	second := *first
+	second.ID = 41
+	s.accounts = falVideoPoolRepo{accounts: []Account{*first, second}}
+	slots := &falVideoSlots{}
+	s.concurrency = NewConcurrencyService(slots)
+	req.APIKey.Group.VideoModelPrices = map[string]map[string]float64{VideoPriceFamilyGrokImagineVideo15: {"720p": 0.5}}
+	req.APIKey.Group.VideoRateIndependent = true
+	req.APIKey.Group.VideoRateMultiplier = 0.25
+	posts := 0
+	s.transport = falVideoTestTransport{do: func(_ *http.Request, _ string, id int64, _ int) (*http.Response, error) {
+		posts++
+		require.EqualValues(t, 41, id)
+		return falVideoJSON(falVideoTestReference), nil
+	}}
+	ctx := context.Background()
+	firstTask, err := s.Submit(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, []int64{40, 41}, slots.attempted)
+	require.Equal(t, []int64{41}, slots.released)
+	require.Equal(t, 0.125, firstTask.UnitPriceUSD)
+	req.APIKey.Group.VideoRateMultiplier = 2
+	req.RoutingModel = "removed-route"
+	replay, err := s.Submit(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, firstTask.ID, replay.ID)
+	require.Equal(t, firstTask.UnitPriceUSD, replay.UnitPriceUSD)
+	require.Equal(t, 1, posts)
+	require.Len(t, billing.reserved, 1)
 }
 
 func TestFalVideoAmbiguousSubmitIsNotRetried(t *testing.T) {
@@ -455,4 +500,13 @@ func TestFalVideoContentDoesNotFollowRedirects(t *testing.T) {
 	require.Nil(t, resp)
 	require.Equal(t, 1, calls)
 	require.True(t, body.closed)
+}
+
+func testVideoPrice(v float64) *float64 { return &v }
+
+func (r falVideoTestAccounts) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, platform string) ([]Account, error) {
+	if r.account == nil || r.account.Platform != platform {
+		return nil, nil
+	}
+	return []Account{*r.account}, nil
 }

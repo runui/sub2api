@@ -699,6 +699,7 @@ export type CompositeRouteEndpoint =
   | 'chat_completions'
   | 'embeddings'
   | 'images'
+  | 'videos'
   | 'gemini'
 
 export type CompositeRouteSource = 'route' | 'detector' | string

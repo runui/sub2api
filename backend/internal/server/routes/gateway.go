@@ -51,6 +51,10 @@ func RegisterGatewayRoutes(
 	endpointNorm := handler.InboundEndpointMiddleware()
 	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
+	videoCreateResolver := compositeResolver
+	if videoCreateResolver == nil {
+		videoCreateResolver = service.NewCompositeRouteResolver(nil)
+	}
 
 	// 未分组 Key 拦截中间件（按协议格式区分错误响应）
 	requireGroupAnthropic := middleware.RequireGroupAssignment(settingService, middleware.AnthropicErrorWriter)
@@ -109,29 +113,61 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoGenerationHandler := func(c *gin.Context) {
-		// Video status/content lookups below already allow Composite groups; keep
-		// task creation aligned so composite keys that route to Grok accounts can
-		// submit video generation jobs.
-		if platform := getGroupPlatform(c); platform == service.PlatformGrok || platform == service.PlatformComposite {
-			h.OpenAIGateway.GrokVideoGeneration(c)
+		key, _ := middleware.GetAPIKeyFromContext(c)
+		if key == nil || key.Group == nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "message": "Video generation requires a group"}})
 			return
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
+		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		if err != nil {
+			if !middleware.RejectRequestBodyReadError(c, "gateway.video_create", err) {
+				middleware.AbortWithRequestBodyReadFailure(c, "gateway.video_create", err)
+			}
+			return
+		}
+		body = requestmodel.TrimUTF8BOM(body)
+		model := service.ExtractGrokMediaModel(c.GetHeader("Content-Type"), body)
+		// Replay belongs to the original task even if the model now routes elsewhere.
+		if h.FalVideo.ReplayCreate(c, model, body) || middleware.RejectFalVideoSpendingDenial(c) {
+			return
+		}
+		if model == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": "model is required"}})
+			return
+		}
+		decision, err := videoCreateResolver.Resolve(c.Request.Context(), key.Group.ID, model, service.CompositeRouteEndpointVideos)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "server_error", "message": "Failed to resolve video model route"}})
+			return
+		}
+		if decision.Reason == service.CompositeRouteReasonAmbiguous {
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": decision.AmbiguousMessage()}})
+			return
+		}
+		if decision.Matched {
+			c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+			switch decision.TargetPlatform {
+			case service.PlatformFal:
+				h.FalVideo.Create(c, model, decision.UpstreamModel, body)
+				return
+			case service.PlatformGrok:
+				if key.Group.Platform == service.PlatformGrok || key.Group.Platform == service.PlatformComposite {
+					requestmodel.ResetRequestBody(c.Request, body)
+					h.OpenAIGateway.GrokVideoGeneration(c)
+					return
+				}
+			}
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "No video route for this model"}})
 	}
 	videoStatusHandler := func(c *gin.Context) {
 		if h.FalVideo != nil && service.IsFalVideoTaskID(c.Param("request_id")) {
 			h.FalVideo.Status(c)
 			return
 		}
-		// Video status requests do not carry a model, so composite groups cannot
-		// be resolved by compositeTargetPlatformMiddleware. Route them through
-		// the Grok handler and let scheduler/account selection enforce capacity.
+		// Status requests carry no model. The native handler enforces the
+		// original key, group and account binding without rerouting.
 		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
 			h.OpenAIGateway.GrokVideoStatus(c)
 			return
@@ -149,9 +185,7 @@ func RegisterGatewayRoutes(
 			h.FalVideo.Content(c)
 			return
 		}
-		// Video content requests do not carry a model, so composite groups cannot
-		// be resolved by compositeTargetPlatformMiddleware. Route them through
-		// the Grok handler just like video status lookups.
+		// Download uses the same original-account binding as status.
 		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
 			h.OpenAIGateway.GrokVideoContent(c)
 			return
@@ -203,23 +237,6 @@ func RegisterGatewayRoutes(
 		}
 	}
 
-	// Match the public model after admission guards, before Composite can rewrite it.
-	matchFalVideo := func(c *gin.Context) {
-		if h.FalVideo != nil && c.Request.Method == http.MethodPost {
-			switch c.FullPath() {
-			case "/v1/videos", "/v1/videos/generations", "/videos", "/videos/generations":
-				if h.FalVideo.TryCreate(c) {
-					c.Abort()
-					return
-				}
-			}
-		}
-		if middleware.RejectFalVideoSpendingDenial(c) {
-			return
-		}
-		c.Next()
-	}
-
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	gateway.Use(groupBodyLimit)
@@ -230,7 +247,6 @@ func RegisterGatewayRoutes(
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	gateway.Use(groupModelAllowlist)
 	gateway.Use(rejectConflictingFields)
-	gateway.Use(matchFalVideo)
 	gateway.Use(compositeTarget)
 	gateway.Use(requireGroupAnthropic)
 	{
@@ -415,7 +431,7 @@ func RegisterGatewayRoutes(
 	// 根路径别名共用中间件链：白名单准入在 apiKeyAuth 之后、compositeTarget
 	// 之前，避免逐条路由手工维护链导致漏挂。
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
-		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, matchFalVideo, compositeTarget, requireGroupAnthropic, handler)
+		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, handler)
 	}
 	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
 		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)
@@ -605,7 +621,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 			c.Next()
 			return
 		}
-		if c.Request == nil || c.Request.Method == http.MethodGet {
+		if c.Request == nil || c.Request.Method == http.MethodGet || compositeRouteEndpointForPath(c.FullPath()) == service.CompositeRouteEndpointVideos {
 			c.Next()
 			return
 		}
@@ -714,6 +730,8 @@ func compositeGeminiModelFromParams(c *gin.Context) string {
 
 func compositeRouteEndpointForPath(path string) string {
 	switch {
+	case path == "/v1/videos" || path == "/v1/videos/generations" || path == "/videos" || path == "/videos/generations":
+		return service.CompositeRouteEndpointVideos
 	case strings.Contains(path, "/messages/count_tokens"):
 		return service.CompositeRouteEndpointCountTokens
 	case strings.Contains(path, "/messages"):

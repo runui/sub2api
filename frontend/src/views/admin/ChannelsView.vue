@@ -244,7 +244,6 @@
               </p>
             </div>
 
-            <FalVideoRoutesEditor v-model="falVideoRoutes" :groups="falVideoGroups" />
 
             <!-- Platform Management -->
             <div class="space-y-3">
@@ -651,7 +650,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
-import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule, FalVideoChannelRoute } from '@/api/admin/channels'
+import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
 import { apiIntervalsToForm, apiTimePricingToForm, createDefaultTimePricingForm, findModelConflict, formIntervalsToAPI, formReasoningEffortMultipliersToAPI, formTimePricingToAPI, isValidPositiveMultiplier, mTokToPerToken, perTokenToMTok, validateIntervals, validateReasoningEffortMultipliers, validateTimePricing } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
@@ -670,7 +669,6 @@ import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import PricingEntryCard from '@/components/admin/channel/PricingEntryCard.vue'
-import FalVideoRoutesEditor from '@/components/admin/channel/FalVideoRoutesEditor.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useKeyedDebouncedSearch } from '@/composables/useKeyedDebouncedSearch'
 
@@ -794,13 +792,6 @@ const form = reactive({
   billing_model_source: 'channel_mapped' as string,
   platforms: [] as PlatformSection[],
   apply_pricing_to_account_stats: false,
-})
-
-const falVideoRoutes = ref<FalVideoChannelRoute[]>()
-const falVideoGroups = computed(() => {
-  const linked = new Set(form.platforms.filter(section => section.enabled).flatMap(section => section.group_ids))
-  return allGroups.value.filter(group => linked.has(group.id) && group.status === 'active' &&
-    group.subscription_type === 'standard' && group.allow_image_generation)
 })
 
 let abortController: AbortController | null = null
@@ -1162,9 +1153,6 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
   const featuresConfig: Record<string, unknown> = editingChannel.value?.features_config
     ? { ...editingChannel.value.features_config }
     : {}
-  if (falVideoRoutes.value !== undefined) {
-    featuresConfig.fal_video_routes = falVideoRoutes.value.map(route => ({ ...route, model: route.model.trim() }))
-  }
 
   for (const section of form.platforms) {
     if (!section.enabled) continue
@@ -1401,7 +1389,6 @@ function handleSort(key: string, order: 'asc' | 'desc') {
 
 // ── Dialog ──
 function resetForm() {
-  falVideoRoutes.value = undefined
   form.name = ''
   form.description = ''
   form.status = 'active'
@@ -1425,8 +1412,6 @@ async function openCreateDialog() {
 
 async function openEditDialog(channel: Channel) {
   editingChannel.value = channel
-  const configuredFalRoutes = channel.features_config?.fal_video_routes
-  falVideoRoutes.value = Array.isArray(configuredFalRoutes) ? configuredFalRoutes : configuredFalRoutes === null ? [] : undefined
   form.name = channel.name
   form.description = channel.description || ''
   form.status = channel.status
@@ -1655,19 +1640,6 @@ async function handleSubmit() {
   }
 
   const { group_ids, model_pricing, model_mapping, features_config } = formToAPI()
-  const seenFalRoutes = new Set<string>()
-  for (const route of falVideoRoutes.value ?? []) {
-    const key = `${route.group_id}:${route.model.trim()}`
-    if (!group_ids.includes(route.group_id) || !route.account_id || !route.model.trim() ||
-      !route.price_usd_per_second['720p'] || seenFalRoutes.has(key) ||
-      Object.values(route.price_usd_per_second).some(rate => !Number.isFinite(rate) || rate < 0.00000001 || rate > 1000)) {
-      activeTab.value = 'basic'
-      appStore.showError(t('admin.channels.falVideo.invalid'))
-      return
-    }
-    seenFalRoutes.add(key)
-  }
-
   submitting.value = true
   try {
     if (editingChannel.value) {

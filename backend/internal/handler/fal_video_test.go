@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -13,7 +11,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -23,11 +20,10 @@ import (
 const falTestModel = "grok-imagine-video-1.5"
 
 type falVideoTestTasks struct {
-	noRoute bool
-	submit  func(service.FalVideoRequest) (falvideotask.Task, error)
-	replay  func(service.FalVideoRequest) (falvideotask.Task, bool, error)
-	get     func(string, int64, int64, int64) (falvideotask.Task, error)
-	open    func(falvideotask.Task, string) (*http.Response, error)
+	submit func(service.FalVideoRequest) (falvideotask.Task, error)
+	replay func(service.FalVideoRequest) (falvideotask.Task, bool, error)
+	get    func(string, int64, int64, int64) (falvideotask.Task, error)
+	open   func(falvideotask.Task, string) (*http.Response, error)
 }
 
 func (s *falVideoTestTasks) Replay(_ context.Context, req service.FalVideoRequest) (falvideotask.Task, bool, error) {
@@ -39,7 +35,6 @@ func (s *falVideoTestTasks) Replay(_ context.Context, req service.FalVideoReques
 
 func TestFalVideoReplayBeforeBillingWithRouteRemoved(t *testing.T) {
 	h := &FalVideoHandler{gateway: &OpenAIGatewayHandler{}, tasks: &falVideoTestTasks{
-		noRoute: true,
 		replay: func(req service.FalVideoRequest) (falvideotask.Task, bool, error) {
 			require.Equal(t, "original", req.IdempotencyKey)
 			return falvideotask.Task{ID: "falvid_123"}, true, nil
@@ -47,13 +42,11 @@ func TestFalVideoReplayBeforeBillingWithRouteRemoved(t *testing.T) {
 	}}
 	c, w, _ := falVideoTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+falTestModel+`","prompt":"waves"}`))
 	c.Request.Header.Set("Idempotency-Key", "original")
-	require.True(t, h.TryCreate(c))
+	body, err := io.ReadAll(c.Request.Body)
+	require.NoError(t, err)
+	require.True(t, h.ReplayCreate(c, falTestModel, body))
 	require.Equal(t, http.StatusOK, w.Code)
 	require.JSONEq(t, `{"request_id":"falvid_123"}`, w.Body.String())
-}
-
-func (s *falVideoTestTasks) ResolveRoute(_ context.Context, groupID int64, model string) (config.FalVideoRoute, bool, error) {
-	return config.FalVideoRoute{}, !s.noRoute && groupID == 9 && model == falTestModel, nil
 }
 
 func (s *falVideoTestTasks) Submit(_ context.Context, req service.FalVideoRequest) (falvideotask.Task, error) {
@@ -80,53 +73,7 @@ func falVideoTestContext(method, path string, body io.Reader) (*gin.Context, *ht
 	return c, w, key
 }
 
-func TestFalVideoTryCreateFallback(t *testing.T) {
-	h := &FalVideoHandler{tasks: &falVideoTestTasks{}}
-	body := []byte(`{"model":"legacy","ignored_by_fal":true}`)
-	var zipped bytes.Buffer
-	zw := gzip.NewWriter(&zipped)
-	_, err := zw.Write(body)
-	require.NoError(t, err)
-	require.NoError(t, zw.Close())
-
-	for _, tc := range []struct {
-		name, encoding string
-		wireBody       []byte
-	}{
-		{"JSON", "", body},
-		{"gzip", "gzip", zipped.Bytes()},
-		{"unreadable gzip", "gzip", body},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c, w, _ := falVideoTestContext(http.MethodPost, "/v1/videos/generations", bytes.NewReader(tc.wireBody))
-			c.Request.Header.Set("Content-Encoding", tc.encoding)
-			originalLength := c.Request.ContentLength
-			require.False(t, h.TryCreate(c))
-			require.False(t, c.Writer.Written())
-			require.Empty(t, w.Body.String())
-			require.Equal(t, originalLength, c.Request.ContentLength)
-			require.Equal(t, tc.encoding, c.GetHeader("Content-Encoding"))
-			remaining, err := io.ReadAll(c.Request.Body)
-			require.NoError(t, err)
-			require.Equal(t, tc.wireBody, remaining)
-		})
-	}
-
-	c, _, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+falTestModel+`"}`))
-	*key.GroupID = 10
-	require.False(t, h.TryCreate(c))
-	remaining, err := io.ReadAll(c.Request.Body)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"model":"`+falTestModel+`"}`, string(remaining))
-
-	c, _, _ = falVideoTestContext(http.MethodPost, "/v1/videos", nil)
-	preread := httputil.NewPrereadBody(body)
-	c.Request.Body = preread
-	require.False(t, h.TryCreate(c))
-	require.Same(t, preread, c.Request.Body)
-}
-
-func TestFalVideoTryCreate(t *testing.T) {
+func TestFalVideoCreate(t *testing.T) {
 	c, w, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{
 		"model":"`+falTestModel+`","prompt":"Make waves","duration":5,"resolution":"720p",
 		"image":{"type":"image_url","image_url":{"url":"https://img.example.com/a%2Fb/?signed=1"}}
@@ -135,17 +82,17 @@ func TestFalVideoTryCreate(t *testing.T) {
 	h := &FalVideoHandler{tasks: &falVideoTestTasks{submit: func(req service.FalVideoRequest) (falvideotask.Task, error) {
 		require.Equal(t, service.FalVideoRequest{
 			UserID: 7, APIKeyID: 8, GroupID: 9, APIKey: key,
-			Model: falTestModel, Prompt: "Make waves", Duration: 5, Resolution: "720p", IdempotencyKey: "client-key",
+			Model: falTestModel, RoutingModel: falTestModel, Prompt: "Make waves", Duration: 5, Resolution: "720p", IdempotencyKey: "client-key",
 			ImageURL: "https://img.example.com/a%2Fb/?signed=1",
 		}, req)
 		return falvideotask.Task{ID: "falvid_123"}, nil
 	}}}
-	require.True(t, h.TryCreate(c))
+	createFalVideoForTest(t, h, c)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.JSONEq(t, `{"request_id":"falvid_123"}`, w.Body.String())
 }
 
-func TestFalVideoTryCreateRejectsUnsupportedFields(t *testing.T) {
+func TestFalVideoCreateRejectsUnsupportedFields(t *testing.T) {
 	h := &FalVideoHandler{tasks: &falVideoTestTasks{}}
 	for _, fields := range []string{
 		`"extra":1`, `"Duration":5`, `"duration":"5"`, `"duration":0`, `"duration":null`,
@@ -161,14 +108,14 @@ func TestFalVideoTryCreateRejectsUnsupportedFields(t *testing.T) {
 		t.Run(fields, func(t *testing.T) {
 			body := fmt.Sprintf(`{"model":%q,"prompt":"waves",%s}`, falTestModel, fields)
 			c, w, _ := falVideoTestContext(http.MethodPost, "/videos/generations", strings.NewReader(body))
-			require.True(t, h.TryCreate(c))
+			createFalVideoForTest(t, h, c)
 			require.Equal(t, http.StatusBadRequest, w.Code)
 			require.Contains(t, w.Body.String(), `"type":"invalid_request_error"`)
 		})
 	}
 }
 
-func TestFalVideoTryCreatePermissionsAndErrors(t *testing.T) {
+func TestFalVideoCreatePermissionsAndErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		err  error
@@ -189,7 +136,7 @@ func TestFalVideoTryCreatePermissionsAndErrors(t *testing.T) {
 				require.NotNil(t, tc.err, "disabled groups must not submit")
 				return falvideotask.Task{ID: "falvid_123"}, fmt.Errorf("provider debug secret: %w", tc.err)
 			}}}
-			require.True(t, h.TryCreate(c))
+			createFalVideoForTest(t, h, c)
 			require.Equal(t, tc.want, w.Code)
 			require.NotContains(t, w.Body.String(), "provider debug secret")
 			if tc.err == service.ErrFalVideoSubmissionUnknown {
@@ -199,7 +146,7 @@ func TestFalVideoTryCreatePermissionsAndErrors(t *testing.T) {
 	}
 }
 
-func TestFalVideoTryCreateReleasesGatewayUserSlot(t *testing.T) {
+func TestFalVideoCreateReleasesGatewayUserSlot(t *testing.T) {
 	for _, submitErr := range []error{nil, service.ErrFalVideoUpstream} {
 		c, w, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+falTestModel+`","prompt":"waves"}`))
 		key.User = &service.User{ID: key.UserID}
@@ -218,7 +165,7 @@ func TestFalVideoTryCreateReleasesGatewayUserSlot(t *testing.T) {
 				return falvideotask.Task{ID: "falvid_123"}, submitErr
 			}},
 		}
-		require.True(t, h.TryCreate(c))
+		createFalVideoForTest(t, h, c)
 		require.Equal(t, 1, cache.userReleaseCalls)
 		if submitErr == nil {
 			require.Equal(t, http.StatusOK, w.Code)
@@ -228,7 +175,7 @@ func TestFalVideoTryCreateReleasesGatewayUserSlot(t *testing.T) {
 	}
 }
 
-func TestFalVideoTryCreateRequiresBalanceGroup(t *testing.T) {
+func TestFalVideoCreateRequiresBalanceGroup(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		apply func(*gin.Context, *service.APIKey)
@@ -243,7 +190,7 @@ func TestFalVideoTryCreateRequiresBalanceGroup(t *testing.T) {
 			c, w, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+falTestModel+`","prompt":"waves"}`))
 			tc.apply(c, key)
 			h := &FalVideoHandler{tasks: &falVideoTestTasks{}}
-			require.True(t, h.TryCreate(c))
+			createFalVideoForTest(t, h, c)
 			require.Equal(t, tc.want, w.Code)
 		})
 	}
@@ -379,4 +326,11 @@ func TestFalVideoContentWaitsForSettlement(t *testing.T) {
 	h.Content(c)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.NotContains(t, w.Body.String(), "fal.media")
+}
+
+func createFalVideoForTest(t *testing.T, h *FalVideoHandler, c *gin.Context) {
+	t.Helper()
+	body, err := io.ReadAll(c.Request.Body)
+	require.NoError(t, err)
+	h.Create(c, falTestModel, falTestModel, body)
 }

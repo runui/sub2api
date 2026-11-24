@@ -5,13 +5,13 @@ import type { Channel, CreateChannelRequest, UpdateChannelRequest } from '@/api/
 import ChannelsView from '@/views/admin/ChannelsView.vue'
 import PricingEntryCard from '@/components/admin/channel/PricingEntryCard.vue'
 
-const { list, create, update, getGroups, getAccounts, getFalVideoPublicPricing, showError } = vi.hoisted(() => ({
-  list: vi.fn(), create: vi.fn(), update: vi.fn(), getGroups: vi.fn(), getAccounts: vi.fn(), getFalVideoPublicPricing: vi.fn(), showError: vi.fn()
+const { list, create, update, getGroups, getAccounts, showError } = vi.hoisted(() => ({
+  list: vi.fn(), create: vi.fn(), update: vi.fn(), getGroups: vi.fn(), getAccounts: vi.fn(), showError: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
-    channels: { list, create, update, getFalVideoPublicPricing },
+    channels: { list, create, update },
     groups: { getAll: getGroups },
     accounts: { list: getAccounts },
     settings: { getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false }) }
@@ -162,47 +162,6 @@ describe('ChannelsView Ultra Fast pricing', () => {
       expect(card.text().includes('admin.channels.form.ultrafastMultiplier')).toBe(visible)
       card.unmount()
     }
-    wrapper.unmount()
-  })
-
-  it('saves, reopens, and explicitly clears fal routes without changing existing pricing', async () => {
-    getGroups.mockResolvedValue([{ id: 22, name: 'OpenAI group', platform: 'openai', status: 'active', subscription_type: 'standard', allow_image_generation: true }])
-    getAccounts.mockResolvedValue({ items: [{ id: 8, name: 'fal account' }], pages: 1 })
-    const wrapper = await createPricingForm()
-    expect(getAccounts).not.toHaveBeenCalled()
-    await clickButton(wrapper, 'admin.channels.falVideo.add')
-    expect(getAccounts).toHaveBeenCalledWith(1, 100, expect.objectContaining({ platform: 'fal', type: 'apikey' }))
-    const editor = wrapper.get('fieldset')
-    await editor.findAll('select')[1].setValue('8')
-    await wrapper.get('#channel-form').trigger('submit')
-    expect(showError).toHaveBeenCalledWith('admin.channels.falVideo.invalid')
-    expect(create).not.toHaveBeenCalled()
-    getFalVideoPublicPricing.mockResolvedValueOnce({ '480p': 0.08, '720p': 0.14, '1080p': 0.25 })
-    await clickButton(wrapper, 'admin.channels.falVideo.loadPricing')
-    const priceInputs = editor.findAll('input[type="number"]')
-    expect(priceInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(['', '', ''])
-    await clickButton(wrapper, 'admin.channels.falVideo.applyPricing')
-    expect(priceInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(['0.08', '0.14', '0.25'])
-    getFalVideoPublicPricing.mockRejectedValueOnce(new Error('offline'))
-    await clickButton(wrapper, 'admin.channels.falVideo.loadPricing')
-    expect(editor.get('[role="alert"]').text()).toBe('admin.channels.falVideo.pricingFailed')
-    expect(priceInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(['0.08', '0.14', '0.25'])
-    await priceInputs[0].setValue('')
-    await priceInputs[2].setValue('')
-    await editor.findAll('input[type="number"]')[1].setValue('0.12')
-    await wrapper.get('#channel-form').trigger('submit')
-    await flushPromises()
-    expect(create.mock.lastCall![0].features_config.fal_video_routes).toEqual([
-      { group_id: 22, account_id: 8, model: 'grok-imagine-video-1.5', price_usd_per_second: { '720p': 0.12 } }
-    ])
-    await clickButton(wrapper, 'common.edit')
-    expect((wrapper.get('fieldset input[type="number"]').element as HTMLInputElement).value).toBe('')
-    expect((wrapper.get('fieldset').findAll('input[type="number"]')[1].element as HTMLInputElement).value).toBe('0.12')
-    await clickButton(wrapper, 'admin.channels.falVideo.remove')
-    await wrapper.get('#channel-form').trigger('submit')
-    await flushPromises()
-    expect(update.mock.lastCall![1].features_config.fal_video_routes).toEqual([])
-    expect(update.mock.lastCall![1].model_pricing).toEqual(create.mock.lastCall![0].model_pricing)
     wrapper.unmount()
   })
 })

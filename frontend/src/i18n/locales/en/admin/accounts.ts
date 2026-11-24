@@ -3,7 +3,7 @@ export default {
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
-      falRouteHint: 'This account is for media generation only. Configure fal video routes in the deployment YAML.',
+      falRouteHint: 'Bind this video-only account to a group, and map each public model to a supported upstream model, such as xai/grok-imagine-video/v1.5.',
       autoRefresh: 'Auto Refresh',
       enableAutoRefresh: 'Enable auto refresh',
       refreshInterval5s: '5 seconds',

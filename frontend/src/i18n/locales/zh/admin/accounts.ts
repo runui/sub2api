@@ -3,7 +3,7 @@ export default {
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',
-      falRouteHint: '此账号仅用于媒体生成。请在部署 YAML 中配置 fal 视频路由。',
+      falRouteHint: '将此视频专用账号绑定到分组，并把公开模型名映射到支持的上游模型，例如 xai/grok-imagine-video/v1.5。',
       autoRefresh: '自动刷新',
       enableAutoRefresh: '启用自动刷新',
       refreshInterval5s: '5 秒',
