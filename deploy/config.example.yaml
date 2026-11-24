@@ -1326,9 +1326,10 @@ update:
   proxy_url: ""
 
 # =============================================================================
-# Optional xAI-compatible Grok Imagine Video 1.5 via fal
+# Legacy YAML routing for Grok Imagine Video 1.5 via fal
 # =============================================================================
-# See docs/FAL_VIDEO_CN.md for account setup, pricing, and API behavior.
+# New routes should be configured in Admin > Channels. See docs/FAL_VIDEO_CN.md.
+# A channel with explicit fal video configuration supersedes YAML for its groups.
 # fal_video:
 #   routes:
 #     - group_id: 12

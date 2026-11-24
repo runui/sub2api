@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
@@ -26,8 +27,7 @@ import (
 )
 
 type falVideoTasks interface {
-	HasRouteForGroup(groupID int64) bool
-	Supports(groupID int64, model string) bool
+	ResolveRoute(context.Context, int64, string) (config.FalVideoRoute, bool, error)
 	Replay(context.Context, service.FalVideoRequest) (falvideotask.Task, bool, error)
 	Submit(context.Context, service.FalVideoRequest) (falvideotask.Task, error)
 	Get(ctx context.Context, id string, userID, keyID, groupID int64) (falvideotask.Task, error)
@@ -47,13 +47,13 @@ func NewFalVideoHandler(svc *service.FalVideoService, gateway *OpenAIGatewayHand
 	return h
 }
 
-// TryCreate claims only video generation requests matching a configured group and model.
+// TryCreate claims configured video routes and replays of existing fal tasks.
 func (h *FalVideoHandler) TryCreate(c *gin.Context) bool {
 	if h == nil || h.tasks == nil || c.Request == nil || c.Request.Body == nil || c.Request.Body == http.NoBody {
 		return false
 	}
 	key, _ := middleware.GetAPIKeyFromContext(c)
-	if key == nil || key.Group == nil || key.GroupID == nil || *key.GroupID <= 0 || !h.tasks.HasRouteForGroup(*key.GroupID) {
+	if key == nil || key.Group == nil || key.GroupID == nil || *key.GroupID <= 0 {
 		return false
 	}
 
@@ -70,12 +70,56 @@ func (h *FalVideoHandler) TryCreate(c *gin.Context) bool {
 	} else if mediaType == "multipart/form-data" {
 		model = service.ExtractGrokMediaModel(contentType, body)
 	}
-	if model == "" || !h.tasks.Supports(*key.GroupID, model) {
+	if model == "" {
+		return false
+	}
+	if h.tryReplay(c, key, model, mediaType, body) {
+		return true
+	}
+	if middleware.RejectFalVideoSpendingDenial(c) {
+		return true
+	}
+	_, found, err := h.tasks.ResolveRoute(c.Request.Context(), *key.GroupID, model)
+	if err != nil {
+		writeFalVideoServiceError(c, err, "")
+		return true
+	}
+	if !found {
 		return false
 	}
 
 	if _, subject, ok := falVideoIdentity(c); ok {
 		h.create(c, key, subject, model, mediaType, body)
+	}
+	return true
+}
+
+func (h *FalVideoHandler) tryReplay(c *gin.Context, key *service.APIKey, model, mediaType string, body []byte) bool {
+	values := c.Request.Header.Values("Idempotency-Key")
+	if len(values) != 1 || strings.TrimSpace(values[0]) == "" || strings.HasPrefix(mediaType, "multipart/") ||
+		key.Group.ID != *key.GroupID || key.Status == service.StatusAPIKeyExpired || key.IsExpired() {
+		return false
+	}
+	req, err := parseFalVideoRequest(body)
+	if err != nil {
+		return false
+	}
+	_, subject, ok := falVideoIdentity(c)
+	if !ok {
+		return true
+	}
+	req.Model, req.UserID, req.APIKeyID, req.GroupID = model, subject.UserID, key.ID, *key.GroupID
+	req.IdempotencyKey = strings.TrimSpace(values[0])
+	task, found, err := h.tasks.Replay(c.Request.Context(), req)
+	if !found && err == nil {
+		return false
+	}
+	setOpsRequestContext(c, model, false)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+	if err != nil {
+		writeFalVideoServiceError(c, err, task.ID)
+	} else {
+		writeFalVideoAcknowledgment(c, task.ID)
 	}
 	return true
 }
@@ -138,20 +182,6 @@ func (h *FalVideoHandler) create(c *gin.Context, key *service.APIKey, subject mi
 	req.IdempotencyKey = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	setOpsRequestContext(c, model, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
-	if req.IdempotencyKey != "" {
-		task, found, err := h.tasks.Replay(c.Request.Context(), req)
-		if err != nil {
-			writeFalVideoServiceError(c, err, task.ID)
-			return
-		}
-		if found {
-			writeFalVideoAcknowledgment(c, task.ID)
-			return
-		}
-	}
-	if middleware.RejectFalVideoSpendingDenial(c) {
-		return
-	}
 	if h.gateway != nil {
 		reqLog := requestLogger(c, "handler.fal_video.create", zap.Int64("user_id", subject.UserID), zap.Int64("api_key_id", key.ID), zap.String("model", model))
 		moderation := service.GrokMediaRequestInfo{Prompt: req.Prompt}

@@ -8,6 +8,13 @@ import type { BillingMode, ChannelStatus, BillingModelSource } from '@/constants
 
 export type { BillingMode } from '@/constants/channel'
 
+export interface FalVideoChannelRoute {
+  group_id: number
+  account_id: number
+  model: string
+  price_usd_per_second: Partial<Record<'480p' | '720p' | '1080p', number>>
+}
+
 export interface PricingInterval {
   id?: number
   min_tokens: number
@@ -208,5 +215,10 @@ export async function syncPricingModels(platform: string): Promise<SyncPricingMo
   return data
 }
 
-const channelsAPI = { list, getById, create, update, remove, getModelDefaultPricing, syncPricingModels }
+export async function getFalVideoPublicPricing(): Promise<Required<FalVideoChannelRoute['price_usd_per_second']>> {
+  const { data } = await apiClient.get<{ price_usd_per_second: Required<FalVideoChannelRoute['price_usd_per_second']> }>('/admin/channels/pricing/fal-video')
+  return data.price_usd_per_second
+}
+
+const channelsAPI = { list, getById, create, update, remove, getModelDefaultPricing, syncPricingModels, getFalVideoPublicPricing }
 export default channelsAPI

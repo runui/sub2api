@@ -48,6 +48,28 @@ export default {
 
     // Channel Management
     channels: {
+      falVideo: {
+        title: 'fal video routes',
+        hint: 'Link a balance-billed group in the platform tab and enable image/video generation on the group. Only matching public video models use fal. Changes apply on save; rates are customer prices, not fal quotes.',
+        group: 'Channel group',
+        selectGroup: 'Select a linked group that allows generation',
+        account: 'fal upstream account',
+        selectAccount: 'Select a fal API key account',
+        model: 'Public model name',
+        add: 'Add fal video route',
+        remove: 'Remove route',
+        disableLegacy: 'Disable legacy YAML routes for linked groups',
+        disabled: 'No fal routes in this channel. Legacy YAML routes will not be used.',
+        loading: 'Loading fal accounts…',
+        loadError: 'Failed to load fal accounts.',
+        retry: 'Retry',
+        loadPricing: 'Look up fal public rates',
+        pricingLoading: 'Checking fal public rates…',
+        publicRates: '{rates} (USD/s). Public video output rates exclude account discounts, reference images, and other add-on charges.',
+        applyPricing: 'Replace this route’s rates with public rates',
+        pricingFailed: 'Could not verify fal public rates. Existing prices were not changed. Retry or enter prices manually.',
+        invalid: 'Each fal route needs a linked group, an account, a unique group and model pair, and a valid 720p price.'
+      },
       title: 'Channel Management',
       description: 'Manage channels and custom model pricing',
       searchChannels: 'Search channels...',

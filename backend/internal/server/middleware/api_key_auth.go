@@ -228,7 +228,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// ── 6. 计费执行（skipBilling 时整块跳过） ────────────────────
 
 		if !skipBilling {
-			deferSpendingDenial := canReplayFalVideo(c, cfg, apiKey)
+			deferSpendingDenial := canReplayFalVideo(c, apiKey)
 			// Key 状态检查
 			switch apiKey.Status {
 			case service.StatusAPIKeyQuotaExhausted:
@@ -382,17 +382,13 @@ func isFalVideoTaskRead(c *gin.Context) bool {
 
 const falVideoSpendingDenialKey = "fal_video_spending_denial"
 
-func canReplayFalVideo(c *gin.Context, cfg *config.Config, key *service.APIKey) bool {
+func canReplayFalVideo(c *gin.Context, key *service.APIKey) bool {
 	if c.Request.Method != http.MethodPost || strings.TrimSpace(c.GetHeader("Idempotency-Key")) == "" || key.GroupID == nil || key.Group == nil || key.Group.IsSubscriptionType() {
 		return false
 	}
 	switch c.FullPath() {
 	case "/v1/videos", "/v1/videos/generations", "/videos", "/videos/generations":
-		for _, route := range cfg.FalVideo.Routes {
-			if route.GroupID == *key.GroupID {
-				return true
-			}
-		}
+		return true // The video route reapplies the denial unless an owned task is replayed.
 	}
 	return false
 }

@@ -11,10 +11,10 @@ type FalVideoConfig struct {
 }
 
 type FalVideoRoute struct {
-	GroupID           int64              `mapstructure:"group_id"`
-	AccountID         int64              `mapstructure:"account_id"`
-	Model             string             `mapstructure:"model"`
-	PriceUSDPerSecond map[string]float64 `mapstructure:"price_usd_per_second"`
+	GroupID           int64              `mapstructure:"group_id" json:"group_id"`
+	AccountID         int64              `mapstructure:"account_id" json:"account_id"`
+	Model             string             `mapstructure:"model" json:"model"`
+	PriceUSDPerSecond map[string]float64 `mapstructure:"price_usd_per_second" json:"price_usd_per_second"`
 }
 
 func (c FalVideoConfig) Validate() error {

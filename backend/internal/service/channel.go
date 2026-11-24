@@ -330,13 +330,27 @@ func (c *Channel) IsResponseModelExposed() bool {
 func deepCopyFeaturesConfig(src map[string]any) map[string]any {
 	dst := make(map[string]any, len(src))
 	for k, v := range src {
-		if inner, ok := v.(map[string]any); ok {
-			dst[k] = deepCopyFeaturesConfig(inner)
-		} else {
-			dst[k] = v
-		}
+		dst[k] = cloneFeatureValue(v)
 	}
 	return dst
+}
+
+func cloneFeatureValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return deepCopyFeaturesConfig(v)
+	case []any:
+		if v == nil {
+			return v
+		}
+		cloned := make([]any, len(v))
+		for i, item := range v {
+			cloned[i] = cloneFeatureValue(item)
+		}
+		return cloned
+	default:
+		return v
+	}
 }
 
 // ValidateIntervals 校验区间列表的合法性。

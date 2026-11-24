@@ -48,6 +48,28 @@ export default {
 
     // Channel Management
     channels: {
+      falVideo: {
+        title: 'fal 视频路由',
+        hint: '先在渠道的平台页绑定余额计费分组，并开启分组的图片/视频生成权限。仅匹配的公开视频模型走 fal。保存即生效，单价为客户价格，不是 fal 报价。',
+        group: '渠道分组',
+        selectGroup: '选择已绑定且允许生成的分组',
+        account: 'fal 上游账号',
+        selectAccount: '选择 fal API Key 账号',
+        model: '客户端模型名',
+        add: '添加 fal 视频路由',
+        remove: '移除路由',
+        disableLegacy: '停用本渠道分组的旧 YAML 路由',
+        disabled: '本渠道的 fal 路由已清空，旧 YAML 路由不会回退。',
+        loading: '正在加载 fal 账号…',
+        loadError: '加载 fal 账号失败。',
+        retry: '重试',
+        loadPricing: '查询 fal 公开价',
+        pricingLoading: '正在核对 fal 公开价…',
+        publicRates: '{rates}（美元/秒）。这是公开视频输出价，不含账号折扣、参考图等附加费用。',
+        applyPricing: '用公开价替换此路由单价',
+        pricingFailed: '无法核实 fal 公开价，现有单价未更改。可重试或手动填写。',
+        invalid: '每条 fal 路由都须填写已绑定分组、账号、唯一的分组与模型组合，以及有效的 720p 单价。'
+      },
       title: '渠道管理',
       description: '管理渠道和自定义模型定价',
       searchChannels: '搜索渠道...',

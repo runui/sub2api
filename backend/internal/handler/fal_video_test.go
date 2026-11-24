@@ -23,10 +23,11 @@ import (
 const falTestModel = "grok-imagine-video-1.5"
 
 type falVideoTestTasks struct {
-	submit func(service.FalVideoRequest) (falvideotask.Task, error)
-	replay func(service.FalVideoRequest) (falvideotask.Task, bool, error)
-	get    func(string, int64, int64, int64) (falvideotask.Task, error)
-	open   func(falvideotask.Task, string) (*http.Response, error)
+	noRoute bool
+	submit  func(service.FalVideoRequest) (falvideotask.Task, error)
+	replay  func(service.FalVideoRequest) (falvideotask.Task, bool, error)
+	get     func(string, int64, int64, int64) (falvideotask.Task, error)
+	open    func(falvideotask.Task, string) (*http.Response, error)
 }
 
 func (s *falVideoTestTasks) Replay(_ context.Context, req service.FalVideoRequest) (falvideotask.Task, bool, error) {
@@ -36,8 +37,9 @@ func (s *falVideoTestTasks) Replay(_ context.Context, req service.FalVideoReques
 	return s.replay(req)
 }
 
-func TestFalVideoReplayBeforeBilling(t *testing.T) {
+func TestFalVideoReplayBeforeBillingWithRouteRemoved(t *testing.T) {
 	h := &FalVideoHandler{gateway: &OpenAIGatewayHandler{}, tasks: &falVideoTestTasks{
+		noRoute: true,
 		replay: func(req service.FalVideoRequest) (falvideotask.Task, bool, error) {
 			require.Equal(t, "original", req.IdempotencyKey)
 			return falvideotask.Task{ID: "falvid_123"}, true, nil
@@ -50,12 +52,8 @@ func TestFalVideoReplayBeforeBilling(t *testing.T) {
 	require.JSONEq(t, `{"request_id":"falvid_123"}`, w.Body.String())
 }
 
-func (*falVideoTestTasks) HasRouteForGroup(groupID int64) bool {
-	return groupID == 9
-}
-
-func (*falVideoTestTasks) Supports(groupID int64, model string) bool {
-	return groupID == 9 && model == falTestModel
+func (s *falVideoTestTasks) ResolveRoute(_ context.Context, groupID int64, model string) (config.FalVideoRoute, bool, error) {
+	return config.FalVideoRoute{}, !s.noRoute && groupID == 9 && model == falTestModel, nil
 }
 
 func (s *falVideoTestTasks) Submit(_ context.Context, req service.FalVideoRequest) (falvideotask.Task, error) {
@@ -116,10 +114,8 @@ func TestFalVideoTryCreateFallback(t *testing.T) {
 
 	c, _, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+falTestModel+`"}`))
 	*key.GroupID = 10
-	original := c.Request.Body
 	require.False(t, h.TryCreate(c))
-	require.Equal(t, original, c.Request.Body)
-	remaining, err := io.ReadAll(original)
+	remaining, err := io.ReadAll(c.Request.Body)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"model":"`+falTestModel+`"}`, string(remaining))
 

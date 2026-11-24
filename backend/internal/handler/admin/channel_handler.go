@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func (h *ChannelHandler) GetFalVideoPublicPricing(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	rates, err := service.FetchFalVideoPublicPricing(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusBadGateway, "Could not verify the public fal video rates. Existing prices were not changed.")
+		return
+	}
+	response.Success(c, gin.H{"price_usd_per_second": rates})
+}
 
 // ChannelHandler handles admin channel management
 type ChannelHandler struct {

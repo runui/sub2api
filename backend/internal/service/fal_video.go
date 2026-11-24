@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -77,6 +78,7 @@ type falVideoStore interface {
 }
 
 type FalVideoService struct {
+	channels    *ChannelService
 	routes      map[int64]map[string]config.FalVideoRoute
 	store       falVideoStore
 	accounts    AccountRepository
@@ -92,9 +94,9 @@ type FalVideoService struct {
 }
 
 func ProvideFalVideoService(cfg *config.Config, db *sql.DB, accounts AccountRepository, transport HTTPUpstream,
-	billing FalVideoBilling, usage UsageLogRepository, cache *BillingCacheService, keys *APIKeyService, concurrency *ConcurrencyService) *FalVideoService {
+	billing FalVideoBilling, usage UsageLogRepository, cache *BillingCacheService, keys *APIKeyService, concurrency *ConcurrencyService, channels *ChannelService) *FalVideoService {
 	s := &FalVideoService{routes: make(map[int64]map[string]config.FalVideoRoute), store: falvideotask.NewStore(db), accounts: accounts,
-		transport: transport, billing: billing, usage: usage, cache: cache, keys: keys, concurrency: concurrency}
+		transport: transport, billing: billing, usage: usage, cache: cache, keys: keys, concurrency: concurrency, channels: channels}
 	for _, route := range cfg.FalVideo.Routes {
 		if s.routes[route.GroupID] == nil {
 			s.routes[route.GroupID] = make(map[string]config.FalVideoRoute)
@@ -118,16 +120,19 @@ func (s *FalVideoService) Stop() {
 
 func IsFalVideoTaskID(id string) bool { return strings.HasPrefix(id, falVideoIDPrefix) }
 
-func (s *FalVideoService) HasRouteForGroup(groupID int64) bool {
-	return s != nil && len(s.routes[groupID]) != 0
-}
-
-func (s *FalVideoService) Supports(groupID int64, model string) bool {
-	if s == nil {
-		return false
+func (s *FalVideoService) ResolveRoute(ctx context.Context, groupID int64, model string) (config.FalVideoRoute, bool, error) {
+	if s.channels != nil {
+		route, found, managed, err := s.channels.FalVideoRoute(ctx, groupID, model)
+		if err != nil {
+			return config.FalVideoRoute{}, false, ErrFalVideoTemporarilyUnavailable
+		}
+		if managed {
+			return route, found, nil
+		}
 	}
-	_, ok := s.routes[groupID][model]
-	return ok
+	route, ok := s.routes[groupID][model]
+	route.PriceUSDPerSecond = maps.Clone(route.PriceUSDPerSecond)
+	return route, ok, nil
 }
 
 func falVideoInput(req FalVideoRequest, route config.FalVideoRoute) (string, falvideo.Input, float64, error) {
@@ -206,7 +211,10 @@ func falVideoFingerprint(model, endpoint string, input falvideo.Input) string {
 
 func (s *FalVideoService) Submit(ctx context.Context, req FalVideoRequest) (falvideotask.Task, error) {
 	var empty falvideotask.Task
-	route, ok := s.routes[req.GroupID][req.Model]
+	route, ok, err := s.ResolveRoute(ctx, req.GroupID, req.Model)
+	if err != nil {
+		return empty, err
+	}
 	if !ok || req.UserID <= 0 || req.APIKeyID <= 0 {
 		return empty, ErrFalVideoNotFound
 	}

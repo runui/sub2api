@@ -228,9 +228,15 @@ func TestFalVideoSubmitMapsInputAndPersistsBeforeAck(t *testing.T) {
 func TestFalVideoModelIsolationAndOwnership(t *testing.T) {
 	s, store, _, _, req := falVideoFixture()
 	ctx := context.Background()
-	require.True(t, s.Supports(req.GroupID, req.Model))
-	require.False(t, s.Supports(req.GroupID, falVideoTextEndpoint))
-	require.False(t, s.Supports(req.GroupID+1, req.Model))
+	for _, test := range []struct {
+		group int64
+		model string
+		found bool
+	}{{req.GroupID, req.Model, true}, {req.GroupID, falVideoTextEndpoint, false}, {req.GroupID + 1, req.Model, false}} {
+		_, found, err := s.ResolveRoute(ctx, test.group, test.model)
+		require.NoError(t, err)
+		require.Equal(t, test.found, found)
+	}
 	wrong := req
 	wrong.Model = falVideoTextEndpoint
 	_, err := s.Submit(ctx, wrong)

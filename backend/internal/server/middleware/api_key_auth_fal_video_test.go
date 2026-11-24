@@ -52,21 +52,17 @@ func TestFalVideoReplayAuthDefersOnlySpendingDenial(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tt := range []struct {
 		name, status, idempotency string
-		configured, replay        bool
+		replay                    bool
 		want                      int
 	}{
-		{"existing", service.StatusActive, "first", true, true, http.StatusNoContent},
-		{"new", service.StatusActive, "first", true, false, http.StatusForbidden},
-		{"quota spent", service.StatusAPIKeyQuotaExhausted, "first", true, true, http.StatusNoContent},
-		{"expired", service.StatusAPIKeyExpired, "first", true, true, http.StatusForbidden},
-		{"unconfigured", service.StatusActive, "first", false, true, http.StatusForbidden},
-		{"not idempotent", service.StatusActive, "", true, true, http.StatusForbidden},
+		{"existing without YAML", service.StatusActive, "first", true, http.StatusNoContent},
+		{"new or unmatched", service.StatusActive, "first", false, http.StatusForbidden},
+		{"quota spent", service.StatusAPIKeyQuotaExhausted, "first", true, http.StatusNoContent},
+		{"expired", service.StatusAPIKeyExpired, "first", true, http.StatusForbidden},
+		{"not idempotent", service.StatusActive, "", true, http.StatusForbidden},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config.Config{RunMode: config.RunModeStandard}
-			if tt.configured {
-				cfg.FalVideo.Routes = []config.FalVideoRoute{{GroupID: 2}}
-			}
 			user := &service.User{ID: 1, Status: service.StatusActive}
 			group := &service.Group{ID: 2, Platform: service.PlatformGrok, Status: service.StatusActive}
 			key := &service.APIKey{ID: 3, UserID: user.ID, Key: "test-key", User: user, Group: group, GroupID: &group.ID, Status: tt.status}

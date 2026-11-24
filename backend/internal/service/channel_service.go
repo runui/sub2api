@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -92,6 +94,8 @@ type wildcardMappingEntry struct {
 
 // channelCache 渠道缓存快照（扁平化哈希结构，热路径 O(1) 查找）
 type channelCache struct {
+	falRoutes  map[int64]channelFalVideoCache
+	falLoadErr error
 	// 热路径查找
 	pricingByGroupModel     map[channelModelKey]*ChannelModelPricing            // (groupID, platform, model) → 定价
 	wildcardByGroupPlatform map[channelGroupPlatformKey][]*wildcardPricingEntry // (groupID, platform) → 通配符定价（按配置顺序，先匹配先使用）
@@ -160,6 +164,7 @@ type ChannelCachePubSub interface {
 
 // ChannelService 渠道管理服务
 type ChannelService struct {
+	falAccounts          AccountRepository
 	repo                 ChannelRepository
 	groupRepo            GroupRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
@@ -182,6 +187,12 @@ func NewChannelService(repo ChannelRepository, groupRepo GroupRepository, authCa
 		cachePubSub:          cachePubSub,
 	}
 	s.subscribeCacheUpdates(context.Background())
+	return s
+}
+
+func ProvideChannelService(repo ChannelRepository, groups GroupRepository, auth APIKeyAuthCacheInvalidator, pricing *PricingService, pubsub ChannelCachePubSub, accounts AccountRepository) *ChannelService {
+	s := NewChannelService(repo, groups, auth, pricing, pubsub)
+	s.falAccounts = accounts
 	return s
 }
 
@@ -215,6 +226,7 @@ func (s *ChannelService) loadCache(ctx context.Context) (*channelCache, error) {
 // newEmptyChannelCache 创建空的渠道缓存（所有 map 已初始化）
 func newEmptyChannelCache() *channelCache {
 	return &channelCache{
+		falRoutes:               make(map[int64]channelFalVideoCache),
 		pricingByGroupModel:     make(map[channelModelKey]*ChannelModelPricing),
 		wildcardByGroupPlatform: make(map[channelGroupPlatformKey][]*wildcardPricingEntry),
 		mappingByGroupModel:     make(map[channelModelKey]string),
@@ -279,8 +291,9 @@ func expandMappingToCache(cache *channelCache, ch *Channel, gid int64, platform 
 
 // storeErrorCache 存入短 TTL 空缓存，防止 DB 错误后紧密重试。
 // 通过回退 loadedAt 使剩余 TTL = channelErrorTTL。
-func (s *ChannelService) storeErrorCache() {
+func (s *ChannelService) storeErrorCache(err error) {
 	errorCache := newEmptyChannelCache()
+	errorCache.falLoadErr = err
 	errorCache.loadedAt = time.Now().Add(-(channelCacheTTL - channelErrorTTL))
 	s.cache.Store(errorCache)
 }
@@ -306,7 +319,7 @@ func (s *ChannelService) fetchChannelData(ctx context.Context) ([]Channel, map[i
 	channels, err := s.repo.ListAll(ctx)
 	if err != nil {
 		slog.Warn("failed to build channel cache", "error", err)
-		s.storeErrorCache()
+		s.storeErrorCache(err)
 		return nil, nil, fmt.Errorf("list all channels: %w", err)
 	}
 
@@ -320,7 +333,7 @@ func (s *ChannelService) fetchChannelData(ctx context.Context) ([]Channel, map[i
 		groupPlatforms, err = s.repo.GetGroupPlatforms(ctx, allGroupIDs)
 		if err != nil {
 			slog.Warn("failed to load group platforms for channel cache", "error", err)
-			s.storeErrorCache()
+			s.storeErrorCache(err)
 			return nil, nil, fmt.Errorf("get group platforms: %w", err)
 		}
 	}
@@ -340,6 +353,7 @@ func populateChannelCache(channels []Channel, groupPlatforms map[int64]string) *
 	for i := range channels {
 		channels[i].normalizeBillingModelSource()
 		ch := &channels[i]
+		cacheFalVideoRoutes(cache, ch)
 		cache.byID[ch.ID] = ch
 		for _, gid := range ch.GroupIDs {
 			cache.channelByGroupID[gid] = ch
@@ -890,6 +904,9 @@ func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) 
 		AccountStatsPricingRules:   input.AccountStatsPricingRules,
 	}
 	channel.normalizeBillingModelSource()
+	if err := s.validateFalVideoRoutes(ctx, channel, true); err != nil {
+		return nil, err
+	}
 
 	if err := validateChannelConfig(channel.ModelPricing, channel.ModelMapping); err != nil {
 		return nil, err
@@ -929,7 +946,13 @@ func (s *ChannelService) Update(ctx context.Context, id int64, input *UpdateChan
 		return nil, fmt.Errorf("get channel: %w", err)
 	}
 
+	previousFalRoutes := channel.FeaturesConfig[channelFalVideoRoutesKey]
+	wasActive := channel.IsActive()
 	if err := s.applyUpdateInput(ctx, channel, input); err != nil {
+		return nil, err
+	}
+	falRoutesEdited := !reflect.DeepEqual(previousFalRoutes, channel.FeaturesConfig[channelFalVideoRoutesKey])
+	if err := s.validateFalVideoRoutes(ctx, channel, falRoutesEdited || (channel.IsActive() && !wasActive)); err != nil {
 		return nil, err
 	}
 
@@ -997,7 +1020,14 @@ func (s *ChannelService) applyUpdateInput(ctx context.Context, channel *Channel,
 		channel.BillingModelSource = input.BillingModelSource
 	}
 	if input.FeaturesConfig != nil {
+		previousFeatures := channel.FeaturesConfig
 		channel.FeaturesConfig = mergeWebSearchEmulationDimensions(channel.FeaturesConfig, input.FeaturesConfig)
+		if _, edited := input.FeaturesConfig[channelFalVideoRoutesKey]; !edited {
+			if routes, managed := previousFeatures[channelFalVideoRoutesKey]; managed {
+				channel.FeaturesConfig = maps.Clone(channel.FeaturesConfig)
+				channel.FeaturesConfig[channelFalVideoRoutesKey] = routes
+			}
+		}
 	}
 	if input.ApplyPricingToAccountStats != nil {
 		channel.ApplyPricingToAccountStats = *input.ApplyPricingToAccountStats
