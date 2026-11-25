@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,26 +61,19 @@ func TestFalVideoExtraProfilesSubmitAndSettle(t *testing.T) {
 			require.Empty(t, store.task.ID)
 			require.Empty(t, billing.reserved)
 
-			prices := map[string]map[string]float64{tc.endpoint: {tc.priceKey: 0.25}}
 			group := req.APIKey.Group
 			group.VideoRateIndependent, group.VideoRateMultiplier = true, 2
-			amount, unit := 0.5, "generation"
+			amount := 0.5
+			rule := domain.VideoModelBillingRule{Unit: domain.VideoBillingPerGeneration}
 			if tc.generation {
-				group.VideoModelSpecPrices = NormalizeVideoModelSpecPrices(prices)
+				rule.SpecRates = map[string]float64{tc.priceKey: .25}
 			} else {
-				group.VideoModelPrices = NormalizeVideoModelPrices(prices)
-				amount, unit = amount*float64(tc.seconds), "second"
+				rule.Unit = domain.VideoBillingPerSecond
+				rule.Rates = map[string]float64{tc.priceKey: .25}
+				amount *= float64(tc.seconds)
 			}
-			var keys []string
-			for _, row := range FalVideoPricingCatalog() {
-				if row.Endpoint == tc.endpoint {
-					require.Equal(t, unit, row.Unit)
-					for _, option := range row.Options {
-						keys = append(keys, option.Key)
-					}
-				}
-			}
-			require.Contains(t, keys, tc.priceKey)
+			group.VideoModelBillingRules = domain.VideoModelBillingRules{tc.endpoint: rule}
+			require.NoError(t, validateVideoBillingRules(group.VideoModelBillingRules, nil))
 			queue := "https://queue.fal.run/" + tc.endpoint
 			job := "https://queue.fal.run/" + strings.Join(strings.Split(tc.endpoint, "/")[:2], "/") + "/requests/job-1"
 			calls := 0
@@ -113,7 +107,7 @@ func TestFalVideoExtraProfilesSubmitAndSettle(t *testing.T) {
 			require.Equal(t, tc.seconds, ack.Duration)
 			require.NotEmpty(t, ack.ProfileVersion)
 			require.Equal(t, "video", ack.ResultPath)
-			group.VideoModelPrices, group.VideoModelSpecPrices = nil, nil
+			group.VideoModelBillingRules = domain.VideoModelBillingRules{}
 			s.gateway.cfg.Gateway.FalVideoProfilesEnabled = false
 			replay, err := s.Submit(ctx, req)
 			require.NoError(t, err)

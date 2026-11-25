@@ -516,6 +516,12 @@ func (_c *GroupCreate) SetVideoModelSpecPrices(v map[string]map[string]float64) 
 	return _c
 }
 
+// SetVideoModelBillingRules sets the "video_model_billing_rules" field.
+func (_c *GroupCreate) SetVideoModelBillingRules(v domain.VideoModelBillingRules) *GroupCreate {
+	_c.mutation.SetVideoModelBillingRules(v)
+	return _c
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (_c *GroupCreate) SetWebSearchPricePerCall(v float64) *GroupCreate {
 	_c.mutation.SetWebSearchPricePerCall(v)
@@ -1654,6 +1660,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldVideoModelSpecPrices, field.TypeJSON, value)
 		_node.VideoModelSpecPrices = value
 	}
+	if value, ok := _c.mutation.VideoModelBillingRules(); ok {
+		_spec.SetField(group.FieldVideoModelBillingRules, field.TypeJSON, value)
+		_node.VideoModelBillingRules = value
+	}
 	if value, ok := _c.mutation.WebSearchPricePerCall(); ok {
 		_spec.SetField(group.FieldWebSearchPricePerCall, field.TypeFloat64, value)
 		_node.WebSearchPricePerCall = &value
@@ -2533,6 +2543,24 @@ func (u *GroupUpsert) UpdateVideoModelSpecPrices() *GroupUpsert {
 // ClearVideoModelSpecPrices clears the value of the "video_model_spec_prices" field.
 func (u *GroupUpsert) ClearVideoModelSpecPrices() *GroupUpsert {
 	u.SetNull(group.FieldVideoModelSpecPrices)
+	return u
+}
+
+// SetVideoModelBillingRules sets the "video_model_billing_rules" field.
+func (u *GroupUpsert) SetVideoModelBillingRules(v domain.VideoModelBillingRules) *GroupUpsert {
+	u.Set(group.FieldVideoModelBillingRules, v)
+	return u
+}
+
+// UpdateVideoModelBillingRules sets the "video_model_billing_rules" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateVideoModelBillingRules() *GroupUpsert {
+	u.SetExcluded(group.FieldVideoModelBillingRules)
+	return u
+}
+
+// ClearVideoModelBillingRules clears the value of the "video_model_billing_rules" field.
+func (u *GroupUpsert) ClearVideoModelBillingRules() *GroupUpsert {
+	u.SetNull(group.FieldVideoModelBillingRules)
 	return u
 }
 
@@ -3790,6 +3818,27 @@ func (u *GroupUpsertOne) UpdateVideoModelSpecPrices() *GroupUpsertOne {
 func (u *GroupUpsertOne) ClearVideoModelSpecPrices() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.ClearVideoModelSpecPrices()
+	})
+}
+
+// SetVideoModelBillingRules sets the "video_model_billing_rules" field.
+func (u *GroupUpsertOne) SetVideoModelBillingRules(v domain.VideoModelBillingRules) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVideoModelBillingRules(v)
+	})
+}
+
+// UpdateVideoModelBillingRules sets the "video_model_billing_rules" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateVideoModelBillingRules() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVideoModelBillingRules()
+	})
+}
+
+// ClearVideoModelBillingRules clears the value of the "video_model_billing_rules" field.
+func (u *GroupUpsertOne) ClearVideoModelBillingRules() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearVideoModelBillingRules()
 	})
 }
 
@@ -5299,6 +5348,27 @@ func (u *GroupUpsertBulk) UpdateVideoModelSpecPrices() *GroupUpsertBulk {
 func (u *GroupUpsertBulk) ClearVideoModelSpecPrices() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.ClearVideoModelSpecPrices()
+	})
+}
+
+// SetVideoModelBillingRules sets the "video_model_billing_rules" field.
+func (u *GroupUpsertBulk) SetVideoModelBillingRules(v domain.VideoModelBillingRules) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVideoModelBillingRules(v)
+	})
+}
+
+// UpdateVideoModelBillingRules sets the "video_model_billing_rules" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateVideoModelBillingRules() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVideoModelBillingRules()
+	})
+}
+
+// ClearVideoModelBillingRules clears the value of the "video_model_billing_rules" field.
+func (u *GroupUpsertBulk) ClearVideoModelBillingRules() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearVideoModelBillingRules()
 	})
 }
 

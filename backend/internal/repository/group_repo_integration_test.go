@@ -13,6 +13,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -72,6 +73,34 @@ func (s *GroupRepoSuite) TestVideoPricingUnitsPersistIndependently() {
 	cleared, err := s.repo.GetByID(s.ctx, group.ID)
 	s.Require().NoError(err)
 	s.Require().Empty(cleared.VideoModelSpecPrices)
+	s.Require().Equal(group.VideoModelPrices, cleared.VideoModelPrices)
+}
+
+func (s *GroupRepoSuite) TestUnifiedVideoBillingNullAndEmptyRoundTrip() {
+	const id = "fal-ai/kling-video/v3/pro/text-to-video"
+	group := &service.Group{
+		Name: "unified-video-pricing", Platform: service.PlatformComposite, RateMultiplier: 1,
+		Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard,
+		VideoModelPrices: map[string]map[string]float64{id: {"auto": .25}},
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+	saved, err := s.repo.GetByIDLite(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().Nil(saved.VideoModelBillingRules)
+	rules, _ := saved.EffectiveVideoBillingRules()
+	s.Require().Equal(.25, rules[id].Rates["auto"])
+	saved.VideoModelBillingRules = domain.VideoModelBillingRules{id: {Unit: domain.VideoBillingPerGeneration, Rates: map[string]float64{"auto": .5}}}
+	s.Require().NoError(s.repo.Update(s.ctx, saved))
+	configured, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(saved.VideoModelBillingRules, configured.VideoModelBillingRules)
+	configured.VideoModelBillingRules = domain.VideoModelBillingRules{}
+	s.Require().NoError(s.repo.Update(s.ctx, configured))
+	cleared, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().NotNil(cleared.VideoModelBillingRules)
+	rules, _ = cleared.EffectiveVideoBillingRules()
+	s.Require().Empty(rules)
 	s.Require().Equal(group.VideoModelPrices, cleared.VideoModelPrices)
 }
 

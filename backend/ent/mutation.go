@@ -22134,6 +22134,7 @@ type GroupMutation struct {
 	addvideo_price_1080p                    *float64
 	video_model_prices                      *map[string]map[string]float64
 	video_model_spec_prices                 *map[string]map[string]float64
+	video_model_billing_rules               *domain.VideoModelBillingRules
 	web_search_price_per_call               *float64
 	addweb_search_price_per_call            *float64
 	search_price_per_1k                     *float64
@@ -24146,6 +24147,55 @@ func (m *GroupMutation) ResetVideoModelSpecPrices() {
 	delete(m.clearedFields, group.FieldVideoModelSpecPrices)
 }
 
+// SetVideoModelBillingRules sets the "video_model_billing_rules" field.
+func (m *GroupMutation) SetVideoModelBillingRules(dmbr domain.VideoModelBillingRules) {
+	m.video_model_billing_rules = &dmbr
+}
+
+// VideoModelBillingRules returns the value of the "video_model_billing_rules" field in the mutation.
+func (m *GroupMutation) VideoModelBillingRules() (r domain.VideoModelBillingRules, exists bool) {
+	v := m.video_model_billing_rules
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoModelBillingRules returns the old "video_model_billing_rules" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVideoModelBillingRules(ctx context.Context) (v domain.VideoModelBillingRules, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoModelBillingRules is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoModelBillingRules requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoModelBillingRules: %w", err)
+	}
+	return oldValue.VideoModelBillingRules, nil
+}
+
+// ClearVideoModelBillingRules clears the value of the "video_model_billing_rules" field.
+func (m *GroupMutation) ClearVideoModelBillingRules() {
+	m.video_model_billing_rules = nil
+	m.clearedFields[group.FieldVideoModelBillingRules] = struct{}{}
+}
+
+// VideoModelBillingRulesCleared returns if the "video_model_billing_rules" field was cleared in this mutation.
+func (m *GroupMutation) VideoModelBillingRulesCleared() bool {
+	_, ok := m.clearedFields[group.FieldVideoModelBillingRules]
+	return ok
+}
+
+// ResetVideoModelBillingRules resets all changes to the "video_model_billing_rules" field.
+func (m *GroupMutation) ResetVideoModelBillingRules() {
+	m.video_model_billing_rules = nil
+	delete(m.clearedFields, group.FieldVideoModelBillingRules)
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (m *GroupMutation) SetWebSearchPricePerCall(f float64) {
 	m.web_search_price_per_call = &f
@@ -26082,7 +26132,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 70)
+	fields := make([]string, 0, 71)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26193,6 +26243,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.video_model_spec_prices != nil {
 		fields = append(fields, group.FieldVideoModelSpecPrices)
+	}
+	if m.video_model_billing_rules != nil {
+		fields = append(fields, group.FieldVideoModelBillingRules)
 	}
 	if m.web_search_price_per_call != nil {
 		fields = append(fields, group.FieldWebSearchPricePerCall)
@@ -26375,6 +26428,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.VideoModelPrices()
 	case group.FieldVideoModelSpecPrices:
 		return m.VideoModelSpecPrices()
+	case group.FieldVideoModelBillingRules:
+		return m.VideoModelBillingRules()
 	case group.FieldWebSearchPricePerCall:
 		return m.WebSearchPricePerCall()
 	case group.FieldSearchPricePer1k:
@@ -26524,6 +26579,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldVideoModelPrices(ctx)
 	case group.FieldVideoModelSpecPrices:
 		return m.OldVideoModelSpecPrices(ctx)
+	case group.FieldVideoModelBillingRules:
+		return m.OldVideoModelBillingRules(ctx)
 	case group.FieldWebSearchPricePerCall:
 		return m.OldWebSearchPricePerCall(ctx)
 	case group.FieldSearchPricePer1k:
@@ -26857,6 +26914,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetVideoModelSpecPrices(v)
+		return nil
+	case group.FieldVideoModelBillingRules:
+		v, ok := value.(domain.VideoModelBillingRules)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoModelBillingRules(v)
 		return nil
 	case group.FieldWebSearchPricePerCall:
 		v, ok := value.(float64)
@@ -27488,6 +27552,9 @@ func (m *GroupMutation) ClearedFields() []string {
 	if m.FieldCleared(group.FieldVideoModelSpecPrices) {
 		fields = append(fields, group.FieldVideoModelSpecPrices)
 	}
+	if m.FieldCleared(group.FieldVideoModelBillingRules) {
+		fields = append(fields, group.FieldVideoModelBillingRules)
+	}
 	if m.FieldCleared(group.FieldWebSearchPricePerCall) {
 		fields = append(fields, group.FieldWebSearchPricePerCall)
 	}
@@ -27570,6 +27637,9 @@ func (m *GroupMutation) ClearField(name string) error {
 		return nil
 	case group.FieldVideoModelSpecPrices:
 		m.ClearVideoModelSpecPrices()
+		return nil
+	case group.FieldVideoModelBillingRules:
+		m.ClearVideoModelBillingRules()
 		return nil
 	case group.FieldWebSearchPricePerCall:
 		m.ClearWebSearchPricePerCall()
@@ -27716,6 +27786,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldVideoModelSpecPrices:
 		m.ResetVideoModelSpecPrices()
+		return nil
+	case group.FieldVideoModelBillingRules:
+		m.ResetVideoModelBillingRules()
 		return nil
 	case group.FieldWebSearchPricePerCall:
 		m.ResetWebSearchPricePerCall()

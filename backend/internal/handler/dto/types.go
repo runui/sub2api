@@ -171,6 +171,9 @@ type Group struct {
 // AdminGroup 是管理员接口使用的 group DTO（包含敏感/内部字段）。
 // 注意：普通用户接口不得返回 model_routing/account_count/account_groups 等内部信息。
 type AdminGroup struct {
+	VideoModelBillingRules     domain.VideoModelBillingRules `json:"video_model_billing_rules"`
+	EffectiveVideoBillingRules domain.VideoModelBillingRules `json:"effective_video_billing_rules"`
+	VideoBillingConflicts      []string                      `json:"video_billing_conflicts,omitempty"`
 	Group
 	// ForceOpenAIFast 是管理端请求策略，用户侧分组 DTO 无需暴露。
 	ForceOpenAIFast      bool `json:"force_openai_fast"`

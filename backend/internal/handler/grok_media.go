@@ -393,7 +393,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			if endpoint.IsSeedance() {
 				return h.gatewayService.ForwardSeedance(requestCtx, c, account, endpoint, requestID, body)
 			}
-			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
+			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType, apiKey)
 		}()
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -507,6 +507,8 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				UpstreamModel:        result.UpstreamModel,
 				VideoResolution:      result.VideoResolution,
 				VideoDurationSeconds: result.VideoDurationSeconds,
+				VideoBillingQuote:    result.VideoBillingQuote,
+				UnifiedVideoBilling:  result.UnifiedVideoBilling,
 				OriginalModel:        clientRequestedModel(c, requestModel),
 				// Wall-clock start for usage duration_ms: create accepted → first done discovery.
 				CreatedAt: videoCreateStartedAt,
@@ -618,7 +620,8 @@ func shouldRecordGrokMediaUsage(endpoint service.GrokMediaEndpoint, requestModel
 
 // prepareGrokVideoCompletionBilling claims one-shot billing for official done+video.url
 // observations (status poll or content download). Duration/model prefer status body;
-// resolution uses create-time request (status response does not document resolution).
+// resolution uses the create-time request (status does not document it). A
+// frozen quote takes precedence over all completion metadata for billing.
 func prepareGrokVideoCompletionBilling(
 	ctx context.Context,
 	h *OpenAIGatewayHandler,
@@ -646,6 +649,12 @@ func prepareGrokVideoCompletionBilling(
 		reqLog.Warn("grok_media.video_pending_billing_load_failed", zap.String("request_id", taskRequestID), zap.Error(loadErr))
 	}
 	if pending == nil {
+		// With unified rules a missing snapshot could mean a lost frozen charge;
+		// never guess a price or unit from the current group in that case.
+		if !strings.HasPrefix(taskRequestID, "seedance:") && apiKey.Group != nil && apiKey.Group.VideoModelBillingRules != nil {
+			reqLog.Error("grok_media.video_billing_skipped_missing_pending", zap.String("request_id", taskRequestID))
+			return nil
+		}
 		// Status omits resolution; without pending we would silently default to 480p and underbill.
 		// Allow billing only when official status carries duration (still may default resolution).
 		if statusResult.VideoDurationSeconds <= 0 {
@@ -673,6 +682,8 @@ func prepareGrokVideoCompletionBilling(
 	// Re-merge with pending: resolution is request-only; model/duration fill gaps.
 	merged := *statusResult
 	if pending != nil {
+		// Status metadata may tell us actual duration, but cannot change a frozen charge.
+		merged.VideoBillingQuote, merged.UnifiedVideoBilling = pending.VideoBillingQuote, pending.UnifiedVideoBilling
 		if strings.TrimSpace(merged.Model) == "" {
 			merged.Model = firstNonEmptyString(pending.BillingModel, pending.Model, pending.OriginalModel)
 		}
@@ -710,6 +721,9 @@ func prepareGrokVideoCompletionBilling(
 	merged.VideoResolution = service.NormalizeVideoBillingResolutionOrDefault(merged.VideoResolution)
 	// Official default duration is 8s when neither status nor create provided it.
 	merged.VideoDurationSeconds = service.NormalizeVideoBillingDurationSecondsOrDefault(merged.VideoDurationSeconds)
+	if merged.VideoBillingQuote != nil {
+		merged.VideoDurationSeconds = merged.VideoBillingQuote.Seconds
+	}
 	// E2E latency for async video: create accept → this discovery of done+url.
 	// Bill on discovery (status/content), not after further client polls; duration
 	// must not be only the single discovery hop (~hundreds of ms).

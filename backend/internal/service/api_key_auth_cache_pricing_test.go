@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,6 +65,16 @@ func TestAPIKeyAuthCacheVideoPricesRoundTrip(t *testing.T) {
 			},
 		},
 	}
+	for _, rules := range []domain.VideoModelBillingRules{nil, {}, {
+		"fal-ai/kling-video/v3/pro/text-to-video": {Unit: domain.VideoBillingPerGeneration, Rates: map[string]float64{"auto": .5}},
+	}} {
+		apiKey.Group.VideoModelBillingRules = rules
+		testVideoAuthCacheRoundTrip(t, apiKey)
+	}
+}
+
+func testVideoAuthCacheRoundTrip(t *testing.T, apiKey *APIKey) {
+	t.Helper()
 	svc := &APIKeyService{}
 	payload, err := json.Marshal(&APIKeyAuthCacheEntry{Snapshot: svc.snapshotFromAPIKey(context.Background(), apiKey)})
 	require.NoError(t, err)
@@ -74,4 +85,5 @@ func TestAPIKeyAuthCacheVideoPricesRoundTrip(t *testing.T) {
 	require.True(t, used)
 	require.Equal(t, apiKey.Group.VideoModelPrices, materialized.Group.VideoModelPrices)
 	require.Equal(t, apiKey.Group.VideoModelSpecPrices, materialized.Group.VideoModelSpecPrices)
+	require.Equal(t, apiKey.Group.VideoModelBillingRules, materialized.Group.VideoModelBillingRules)
 }

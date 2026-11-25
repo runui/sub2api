@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/testutil"
@@ -418,5 +419,43 @@ func TestGrokMediaVideoCompletionStillClaimsBillingOnce(t *testing.T) {
 			require.Nil(t, bill)
 		}
 	}
+	require.Len(t, bindings.billed, 1)
+}
+
+func TestGrokMediaUnifiedVideoBillingFreezesBeforeSubmit(t *testing.T) {
+	h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, false)
+	const model = service.VideoPriceFamilyGrokImagineVideo
+	makeKey := func(c *gin.Context, tier string) *service.APIKey {
+		key, ok := middleware2.GetAPIKeyFromContext(c)
+		require.True(t, ok)
+		key.Group.RateMultiplier = 2
+		key.Group.VideoModelBillingRules = domain.VideoModelBillingRules{model: {
+			Unit: domain.VideoBillingPerGeneration, Rates: map[string]float64{tier: .5},
+		}}
+		return key
+	}
+	c, w := grokMediaSlotContext(context.Background(), true)
+	makeKey(c, "720p")
+	h.GrokVideoGeneration(c)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Zero(t, upstream.calls)
+	slots.assertReleased(t)
+
+	c, w = grokMediaSlotContext(context.Background(), true)
+	key := makeKey(c, "480p")
+	h.GrokVideoGeneration(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, upstream.calls)
+	slots.assertReleased(t)
+	key.Group.VideoModelBillingRules = domain.VideoModelBillingRules{}
+
+	subject := middleware2.AuthSubject{UserID: key.UserID, Concurrency: 5}
+	result := &service.OpenAIForwardResult{ResponseID: "task", Model: model, VideoCount: 1, VideoDurationSeconds: 15}
+	bill := prepareGrokVideoCompletionBilling(c.Request.Context(), h, zap.NewNop(), key, subject, "task", result)
+	require.NotNil(t, bill)
+	require.NotNil(t, bill.VideoBillingQuote)
+	require.Equal(t, 1.0, bill.VideoBillingQuote.Cost.ActualCost)
+	require.Equal(t, 6, bill.VideoDurationSeconds)
+	require.Nil(t, prepareGrokVideoCompletionBilling(c.Request.Context(), h, zap.NewNop(), key, subject, "task", result))
 	require.Len(t, bindings.billed, 1)
 }

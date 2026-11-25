@@ -685,6 +685,18 @@ func (_u *GroupUpdate) ClearVideoModelSpecPrices() *GroupUpdate {
 	return _u
 }
 
+// SetVideoModelBillingRules sets the "video_model_billing_rules" field.
+func (_u *GroupUpdate) SetVideoModelBillingRules(v domain.VideoModelBillingRules) *GroupUpdate {
+	_u.mutation.SetVideoModelBillingRules(v)
+	return _u
+}
+
+// ClearVideoModelBillingRules clears the value of the "video_model_billing_rules" field.
+func (_u *GroupUpdate) ClearVideoModelBillingRules() *GroupUpdate {
+	_u.mutation.ClearVideoModelBillingRules()
+	return _u
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (_u *GroupUpdate) SetWebSearchPricePerCall(v float64) *GroupUpdate {
 	_u.mutation.ResetWebSearchPricePerCall()
@@ -1803,6 +1815,12 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.VideoModelSpecPricesCleared() {
 		_spec.ClearField(group.FieldVideoModelSpecPrices, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.VideoModelBillingRules(); ok {
+		_spec.SetField(group.FieldVideoModelBillingRules, field.TypeJSON, value)
+	}
+	if _u.mutation.VideoModelBillingRulesCleared() {
+		_spec.ClearField(group.FieldVideoModelBillingRules, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.WebSearchPricePerCall(); ok {
 		_spec.SetField(group.FieldWebSearchPricePerCall, field.TypeFloat64, value)
@@ -2937,6 +2955,18 @@ func (_u *GroupUpdateOne) SetVideoModelSpecPrices(v map[string]map[string]float6
 // ClearVideoModelSpecPrices clears the value of the "video_model_spec_prices" field.
 func (_u *GroupUpdateOne) ClearVideoModelSpecPrices() *GroupUpdateOne {
 	_u.mutation.ClearVideoModelSpecPrices()
+	return _u
+}
+
+// SetVideoModelBillingRules sets the "video_model_billing_rules" field.
+func (_u *GroupUpdateOne) SetVideoModelBillingRules(v domain.VideoModelBillingRules) *GroupUpdateOne {
+	_u.mutation.SetVideoModelBillingRules(v)
+	return _u
+}
+
+// ClearVideoModelBillingRules clears the value of the "video_model_billing_rules" field.
+func (_u *GroupUpdateOne) ClearVideoModelBillingRules() *GroupUpdateOne {
+	_u.mutation.ClearVideoModelBillingRules()
 	return _u
 }
 
@@ -4088,6 +4118,12 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if _u.mutation.VideoModelSpecPricesCleared() {
 		_spec.ClearField(group.FieldVideoModelSpecPrices, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.VideoModelBillingRules(); ok {
+		_spec.SetField(group.FieldVideoModelBillingRules, field.TypeJSON, value)
+	}
+	if _u.mutation.VideoModelBillingRulesCleared() {
+		_spec.ClearField(group.FieldVideoModelBillingRules, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.WebSearchPricePerCall(); ok {
 		_spec.SetField(group.FieldWebSearchPricePerCall, field.TypeFloat64, value)

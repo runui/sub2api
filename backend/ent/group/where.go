@@ -1845,6 +1845,16 @@ func VideoModelSpecPricesNotNil() predicate.Group {
 	return predicate.Group(sql.FieldNotNull(FieldVideoModelSpecPrices))
 }
 
+// VideoModelBillingRulesIsNil applies the IsNil predicate on the "video_model_billing_rules" field.
+func VideoModelBillingRulesIsNil() predicate.Group {
+	return predicate.Group(sql.FieldIsNull(FieldVideoModelBillingRules))
+}
+
+// VideoModelBillingRulesNotNil applies the NotNil predicate on the "video_model_billing_rules" field.
+func VideoModelBillingRulesNotNil() predicate.Group {
+	return predicate.Group(sql.FieldNotNull(FieldVideoModelBillingRules))
+}
+
 // WebSearchPricePerCallEQ applies the EQ predicate on the "web_search_price_per_call" field.
 func WebSearchPricePerCallEQ(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldWebSearchPricePerCall, v))

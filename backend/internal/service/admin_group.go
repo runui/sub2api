@@ -396,6 +396,9 @@ func normalizeUpdateGroupInputForSimpleMode(input *UpdateGroupInput) {
 }
 
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
+	if err := validateVideoBillingRules(input.VideoModelBillingRules, nil); err != nil {
+		return nil, err
+	}
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple && NormalizeGroupPlatform(input.Platform) == PlatformComposite {
 		return nil, infraerrors.BadRequest("SIMPLE_MODE_GROUP_NOT_BINDABLE", "composite groups are not supported in simple mode")
 	}
@@ -617,6 +620,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		VideoPrice1080P:                 videoPrice1080P,
 		VideoModelPrices:                NormalizeVideoModelPrices(input.VideoModelPrices),
 		VideoModelSpecPrices:            NormalizeVideoModelSpecPrices(input.VideoModelSpecPrices),
+		VideoModelBillingRules:          cloneVideoBillingRules(input.VideoModelBillingRules),
 		WebSearchPricePerCall:           webSearchPricePerCall,
 		SearchPricePer1k:                searchPricePer1k,
 		AudioRealtimePricePerMin:        audioRealtimePricePerMin,
@@ -777,6 +781,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	group, err := s.groupRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if input.VideoModelBillingRules != nil {
+		previous, _ := group.EffectiveVideoBillingRules()
+		if err := validateVideoBillingRules(input.VideoModelBillingRules, previous); err != nil {
+			return nil, err
+		}
+		group.VideoModelBillingRules = cloneVideoBillingRules(input.VideoModelBillingRules)
 	}
 	if err := s.validateSimpleModeGroupAccess(group); err != nil {
 		return nil, err

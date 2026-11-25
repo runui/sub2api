@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 29 // v29 includes per-generation video prices.
+const apiKeyAuthSnapshotVersion = 30 // v30 includes unified video billing rules.
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -405,6 +405,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			VideoPrice1080P:                 apiKey.Group.VideoPrice1080P,
 			VideoModelPrices:                NormalizeVideoModelPrices(apiKey.Group.VideoModelPrices),
 			VideoModelSpecPrices:            NormalizeVideoModelSpecPrices(apiKey.Group.VideoModelSpecPrices),
+			VideoModelBillingRules:          cloneVideoBillingRules(apiKey.Group.VideoModelBillingRules),
 			WebSearchPricePerCall:           apiKey.Group.WebSearchPricePerCall,
 			SearchPricePer1k:                apiKey.Group.SearchPricePer1k,
 			AudioRealtimePricePerMin:        apiKey.Group.AudioRealtimePricePerMin,
@@ -512,6 +513,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			VideoPrice1080P:                 snapshot.Group.VideoPrice1080P,
 			VideoModelPrices:                NormalizeVideoModelPrices(snapshot.Group.VideoModelPrices),
 			VideoModelSpecPrices:            NormalizeVideoModelSpecPrices(snapshot.Group.VideoModelSpecPrices),
+			VideoModelBillingRules:          cloneVideoBillingRules(snapshot.Group.VideoModelBillingRules),
 			WebSearchPricePerCall:           snapshot.Group.WebSearchPricePerCall,
 			SearchPricePer1k:                snapshot.Group.SearchPricePer1k,
 			AudioRealtimePricePerMin:        snapshot.Group.AudioRealtimePricePerMin,

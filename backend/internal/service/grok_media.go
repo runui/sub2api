@@ -386,12 +386,14 @@ func (s *OpenAIGatewayService) SelectMediaVideoRequestAccount(
 // first observes a completed video URL. Status may omit model/duration; we fall
 // back to this snapshot, then defaults.
 type GrokVideoPendingBilling struct {
-	Model                string `json:"model"`
-	BillingModel         string `json:"billing_model,omitempty"`
-	UpstreamModel        string `json:"upstream_model,omitempty"`
-	VideoResolution      string `json:"video_resolution,omitempty"`
-	VideoDurationSeconds int    `json:"video_duration_seconds,omitempty"`
-	OriginalModel        string `json:"original_model,omitempty"`
+	Model                string                   `json:"model"`
+	BillingModel         string                   `json:"billing_model,omitempty"`
+	UpstreamModel        string                   `json:"upstream_model,omitempty"`
+	VideoResolution      string                   `json:"video_resolution,omitempty"`
+	VideoDurationSeconds int                      `json:"video_duration_seconds,omitempty"`
+	OriginalModel        string                   `json:"original_model,omitempty"`
+	VideoBillingQuote    *FrozenVideoBillingQuote `json:"video_billing_quote,omitempty"`
+	UnifiedVideoBilling  bool                     `json:"unified_video_billing,omitempty"`
 	// CreatedAt is when the gateway accepted the async create (RFC3339Nano UTC).
 	// duration_ms for deferred billing is measured from this instant until the
 	// first official done+video.url observation (status poll or content download),
@@ -662,6 +664,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	requestID string,
 	body []byte,
 	contentType string,
+	billingKeys ...*APIKey,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 	if account == nil {
@@ -714,6 +717,21 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	body, contentType, err = sanitizeGrokMediaForwardBody(endpoint, body, contentType)
 	if err != nil {
 		return nil, err
+	}
+
+	var quote *FrozenVideoBillingQuote
+	unifiedBilling := false
+	if len(billingKeys) != 0 {
+		switch endpoint {
+		case GrokMediaEndpointVideosGenerations, GrokMediaEndpointVideosEdits, GrokMediaEndpointVideosExtensions:
+			key := billingKeys[0]
+			unifiedBilling = key != nil && key.Group != nil && key.Group.VideoModelBillingRules != nil
+			// Resolve after account mapping, but before any chargeable upstream POST.
+			quote, err = s.freezeGrokVideoRule(ctx, key, requestInfo.Model, upstreamModel, requestInfo)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	var bodyReader io.Reader
@@ -812,6 +830,8 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		VideoCount:           usage.VideoCount,
 		VideoResolution:      usage.VideoResolution,
 		VideoDurationSeconds: usage.VideoDurationSeconds,
+		VideoBillingQuote:    quote,
+		UnifiedVideoBilling:  unifiedBilling,
 	}, nil
 }
 

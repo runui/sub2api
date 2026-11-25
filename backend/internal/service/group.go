@@ -61,7 +61,8 @@ type Group struct {
 	// (fal), then by output tier. Only Grok-family quotes use flat-price fallback.
 	VideoModelPrices map[string]map[string]float64
 	// VideoModelSpecPrices stores USD per generation by exact endpoint and spec key.
-	VideoModelSpecPrices map[string]map[string]float64
+	VideoModelSpecPrices   map[string]map[string]float64
+	VideoModelBillingRules domain.VideoModelBillingRules
 	// Codex alpha/search 网页搜索单次价格（USD/次，仅 openai 平台使用）；
 	// nil 表示使用默认价 defaultWebSearchPricePerCall（官方 $10/1000 次）。
 	WebSearchPricePerCall *float64

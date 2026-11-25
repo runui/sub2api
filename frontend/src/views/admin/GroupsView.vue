@@ -1094,6 +1094,11 @@
               placeholder="1"
             />
           </div>
+          <GroupVideoBillingRules
+            :rules="createForm.video_model_billing_rules"
+            @update="createForm.video_model_billing_rules = $event; createVideoBillingDirty = true"
+          />
+          <p class="mb-2 mt-4 text-sm font-medium">{{ t(videoPricingI18nKey("defaultRates")) }}</p>
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">480p ($/s)</label>
@@ -1128,50 +1133,6 @@
                 :placeholder="getVideoPricePlaceholder(createForm.platform, 'video_price_1080p')"
               />
             </div>
-          </div>
-          <div
-            class="mt-4 border-t border-dashed border-gray-200 pt-4 dark:border-dark-700"
-            data-testid="create-grok-video-model-prices"
-          >
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ t("admin.groups.videoPricing.modelOverridesTitle") }}
-            </p>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t("admin.groups.videoPricing.modelOverridesDescription") }}
-            </p>
-            <div class="mt-3 space-y-3">
-              <div
-                v-for="family in videoModelPriceFamilyRows(createForm.video_model_prices).filter(family => !family.key.includes('/'))"
-                :key="family.key"
-                class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))] sm:items-end"
-              >
-                <div class="min-w-0 pb-1 font-mono text-xs text-gray-700 dark:text-gray-300">
-                  {{ family.label }}
-                </div>
-                <label
-                  v-for="resolution in grokVideoPriceResolutions"
-                  :key="resolution.key"
-                  class="block"
-                >
-                  <span class="mb-1 block text-xs text-gray-500 dark:text-gray-400">
-                    {{ resolution.label }} ($/s)
-                  </span>
-                  <input
-                    v-model.number="createForm.video_model_prices[family.key][resolution.key]"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    :data-testid="`create-grok-video-price-${family.key}-${resolution.key}`"
-                  />
-                </label>
-              </div>
-            </div>
-            <GroupVideoEndpointPrices
-              :seconds="createForm.video_model_prices"
-              :specs="createForm.video_model_spec_prices"
-              @price="(unit, endpoint, key, value) => setEndpointPrice(createForm, unit, endpoint, key, value)"
-            />
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             {{ t(videoPricingI18nKey("modeHint")) }}
@@ -2766,6 +2727,12 @@
               placeholder="1"
             />
           </div>
+          <GroupVideoBillingRules
+            :rules="editForm.video_model_billing_rules"
+            :conflicts="editVideoBillingConflicts"
+            @update="editForm.video_model_billing_rules = $event; editVideoBillingDirty = true"
+          />
+          <p class="mb-2 mt-4 text-sm font-medium">{{ t(videoPricingI18nKey("defaultRates")) }}</p>
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">480p ($/s)</label>
@@ -2800,50 +2767,6 @@
                 :placeholder="getVideoPricePlaceholder(editForm.platform, 'video_price_1080p')"
               />
             </div>
-          </div>
-          <div
-            class="mt-4 border-t border-dashed border-gray-200 pt-4 dark:border-dark-700"
-            data-testid="edit-grok-video-model-prices"
-          >
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ t("admin.groups.videoPricing.modelOverridesTitle") }}
-            </p>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t("admin.groups.videoPricing.modelOverridesDescription") }}
-            </p>
-            <div class="mt-3 space-y-3">
-              <div
-                v-for="family in videoModelPriceFamilyRows(editForm.video_model_prices).filter(family => !family.key.includes('/'))"
-                :key="family.key"
-                class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))] sm:items-end"
-              >
-                <div class="min-w-0 pb-1 font-mono text-xs text-gray-700 dark:text-gray-300">
-                  {{ family.label }}
-                </div>
-                <label
-                  v-for="resolution in grokVideoPriceResolutions"
-                  :key="resolution.key"
-                  class="block"
-                >
-                  <span class="mb-1 block text-xs text-gray-500 dark:text-gray-400">
-                    {{ resolution.label }} ($/s)
-                  </span>
-                  <input
-                    v-model.number="editForm.video_model_prices[family.key][resolution.key]"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    :data-testid="`edit-grok-video-price-${family.key}-${resolution.key}`"
-                  />
-                </label>
-              </div>
-            </div>
-            <GroupVideoEndpointPrices
-              :seconds="editForm.video_model_prices"
-              :specs="editForm.video_model_spec_prices"
-              @price="(unit, endpoint, key, value) => setEndpointPrice(editForm, unit, endpoint, key, value)"
-            />
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             {{ t(videoPricingI18nKey("modeHint")) }}
@@ -4438,26 +4361,12 @@ import {
   supportsVideoPricingPlatform,
   videoPricingI18nKey,
 } from "./groupsImagePricing";
-import {
-  createVideoModelPricesForm,
-  serializeVideoModelPrices,
-  videoModelPriceFamilyRows,
-  grokVideoPriceResolutions,
-  type VideoModelPricesForm,
-} from "./groupsVideoModelPricing";
+import GroupVideoBillingRules from "./GroupVideoBillingRules.vue";
+import type { VideoModelBillingRules } from "@/types";
 
-import GroupVideoEndpointPrices from "./GroupVideoEndpointPrices.vue";
-
-function setEndpointPrice(
-  form: { video_model_prices: VideoModelPricesForm; video_model_spec_prices: VideoModelPricesForm },
-  unit: "second" | "generation",
-  endpoint: string,
-  key: string,
-  value: string,
-) {
-  const prices = unit === "second" ? form.video_model_prices : form.video_model_spec_prices;
-  (prices[endpoint] ??= {})[key] = value;
-}
+const createVideoBillingDirty = ref(false);
+const editVideoBillingDirty = ref(false);
+const editVideoBillingConflicts = ref<string[]>([]);
 
 const supportsLivePlatform = (platform: string): boolean =>
   platform === "openai" || platform === "composite";
@@ -5058,8 +4967,7 @@ const createForm = reactive({
   video_price_480p: null as number | null,
   video_price_720p: null as number | null,
   video_price_1080p: null as number | null,
-  video_model_prices: createVideoModelPricesForm(),
-  video_model_spec_prices: {} as VideoModelPricesForm,
+  video_model_billing_rules: {} as VideoModelBillingRules,
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
   search_price_per_1k: null as number | null,
@@ -5427,8 +5335,7 @@ const editForm = reactive({
   video_price_480p: null as number | null,
   video_price_720p: null as number | null,
   video_price_1080p: null as number | null,
-  video_model_prices: createVideoModelPricesForm(),
-  video_model_spec_prices: {} as VideoModelPricesForm,
+  video_model_billing_rules: {} as VideoModelBillingRules,
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
   search_price_per_1k: null as number | null,
@@ -5898,8 +5805,8 @@ const closeCreateModal = () => {
   createForm.video_price_480p = null;
   createForm.video_price_720p = null;
   createForm.video_price_1080p = null;
-  createForm.video_model_prices = createVideoModelPricesForm();
-  createForm.video_model_spec_prices = {};
+  createForm.video_model_billing_rules = {};
+  createVideoBillingDirty.value = false;
   createForm.long_context_pricing_enabled = true;
   createForm.force_openai_fast = false;
   createForm.force_openai_ultrafast = false;
@@ -6015,14 +5922,7 @@ const handleCreateGroup = async () => {
   }
   submitting.value = true;
   try {
-    const {
-      video_model_prices: _createFormVideoModelPrices,
-      video_model_spec_prices: _createFormVideoModelSpecPrices,
-      ...createGroupForm
-    } = createForm;
-    const videoModelPrices = serializeVideoModelPrices(
-      createForm.video_model_prices,
-    );
+    const { video_model_billing_rules: _videoRules, ...createGroupForm } = createForm;
     // 构建请求数据，包含模型路由配置
     const requestData = {
       ...createGroupForm,
@@ -6051,10 +5951,7 @@ const handleCreateGroup = async () => {
       monthly_limit_usd: normalizeOptionalLimit(
         createForm.monthly_limit_usd as number | string | null,
       ),
-      video_model_spec_prices: serializeVideoModelPrices(createForm.video_model_spec_prices),
-      ...(Object.keys(videoModelPrices).length > 0
-        ? { video_model_prices: videoModelPrices }
-        : {}),
+      video_model_billing_rules: createVideoBillingDirty.value ? createForm.video_model_billing_rules : undefined,
       model_routing: convertRoutingRulesToApiFormat(
         createModelRoutingRules.value,
       ),
@@ -6204,10 +6101,9 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.video_price_480p = group.video_price_480p;
   editForm.video_price_720p = group.video_price_720p;
   editForm.video_price_1080p = group.video_price_1080p;
-  editForm.video_model_prices = createVideoModelPricesForm(
-    group.video_model_prices,
-  );
-  editForm.video_model_spec_prices = serializeVideoModelPrices(group.video_model_spec_prices ?? {});
+  editForm.video_model_billing_rules = group.effective_video_billing_rules ?? group.video_model_billing_rules ?? {};
+  editVideoBillingDirty.value = false;
+  editVideoBillingConflicts.value = group.video_billing_conflicts ?? [];
   editForm.web_search_price_per_call = group.web_search_price_per_call ?? null;
   editForm.search_price_per_1k = group.search_price_per_1k ?? null;
   editForm.audio_realtime_price_per_min = group.audio_realtime_price_per_min ?? null;
@@ -6318,8 +6214,9 @@ const closeEditModal = () => {
   editForm.video_price_480p = null;
   editForm.video_price_720p = null;
   editForm.video_price_1080p = null;
-  editForm.video_model_prices = createVideoModelPricesForm();
-  editForm.video_model_spec_prices = {};
+  editForm.video_model_billing_rules = {};
+  editVideoBillingDirty.value = false;
+  editVideoBillingConflicts.value = [];
   editForm.long_context_pricing_enabled = true;
   editForm.force_openai_fast = false;
   editForm.force_openai_ultrafast = false;
@@ -6404,10 +6301,7 @@ const handleUpdateGroup = async () => {
       monthly_limit_usd: normalizeOptionalLimit(
         editForm.monthly_limit_usd as number | string | null,
       ),
-      video_model_prices: serializeVideoModelPrices(
-        editForm.video_model_prices,
-      ),
-      video_model_spec_prices: serializeVideoModelPrices(editForm.video_model_spec_prices),
+      video_model_billing_rules: editVideoBillingDirty.value ? editForm.video_model_billing_rules : undefined,
       fallback_group_id:
         editForm.fallback_group_id === null ? 0 : editForm.fallback_group_id,
       fallback_group_id_on_invalid_request:

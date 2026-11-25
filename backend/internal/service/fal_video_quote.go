@@ -3,45 +3,10 @@ package service
 import (
 	"fmt"
 	"math"
-	"sort"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideo"
 )
-
-type VideoEndpointPricing struct {
-	Endpoint string             `json:"endpoint"`
-	Unit     string             `json:"unit"`
-	Options  []VideoPriceOption `json:"options"`
-}
-
-type VideoPriceOption struct {
-	Key         string `json:"key"`
-	Resolution  string `json:"resolution,omitempty"`
-	Duration    int    `json:"duration,omitempty"`
-	AspectRatio string `json:"aspect_ratio,omitempty"`
-}
-
-// FalVideoPricingCatalog exposes contract-defined keys, not provider costs or
-// the current group's prices. The admin editor and runtime use the same keys.
-func FalVideoPricingCatalog() []VideoEndpointPricing {
-	rows := make([]VideoEndpointPricing, 0, len(falVideoProfiles))
-	for id, profile := range falVideoProfiles {
-		row := VideoEndpointPricing{Endpoint: id, Unit: "second"}
-		if profile.SpecPricing {
-			row.Unit = "generation"
-			for _, spec := range profile.specs() {
-				row.Options = append(row.Options, VideoPriceOption{spec.key(), spec.Resolution, spec.Duration, spec.AspectRatio})
-			}
-		} else {
-			for _, resolution := range profile.Resolutions {
-				row.Options = append(row.Options, VideoPriceOption{Key: falVideoResolutionPriceKey(resolution), Resolution: resolution})
-			}
-		}
-		rows = append(rows, row)
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Endpoint < rows[j].Endpoint })
-	return rows
-}
 
 // Keep persisted prices for future or retired specs, but never use one without
 // matching the current contract exactly. An unrelated group edit need not know
@@ -93,13 +58,29 @@ func falVideoEndpointPrice(group *Group, profile falVideoProfile, input falvideo
 }
 
 func quoteFalVideo(group *Group, profile falVideoProfile, input falvideo.Input, multiplier float64) (float64, error) {
-	price := falVideoEndpointPrice(group, profile, input)
-	if price != nil && positiveVideoQuote(*price) {
-		amount := *price * multiplier
-		if !profile.SpecPricing {
-			amount *= float64(input.Duration)
+	id := profile.Endpoint
+	if profile.Version == falVideoImagine15Version {
+		id = VideoPriceFamilyGrokImagineVideo15
+	}
+	var price *float64
+	unit := domain.VideoBillingPerSecond
+	if group.VideoModelBillingRules == nil {
+		price = falVideoEndpointPrice(group, profile, input)
+		if profile.SpecPricing {
+			unit = domain.VideoBillingPerGeneration
 		}
-		if amount = QuantizeUsageBillingAmount(amount); positiveVideoQuote(amount) {
+	} else if rule, exists := group.VideoModelBillingRules[id]; exists {
+		unit = rule.Unit
+		if rate, ok := videoRuleRate(rule, falVideoResolutionPriceKey(input.Resolution), falVideoSpecFromInput(input).key()); ok {
+			price = &rate
+		} else if id == VideoPriceFamilyGrokImagineVideo15 && unit == domain.VideoBillingPerSecond {
+			price = group.GetVideoPrice(input.Resolution)
+		}
+	} else if id == VideoPriceFamilyGrokImagineVideo15 {
+		price = group.GetVideoPrice(input.Resolution)
+	}
+	if price != nil && positiveVideoQuote(*price) {
+		if amount := videoRuleCost(unit, *price, 1, input.Duration, multiplier).ActualCost; positiveVideoQuote(amount) {
 			return amount, nil
 		}
 	}

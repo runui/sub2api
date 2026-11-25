@@ -546,6 +546,14 @@ export interface PaginationConfig {
  */
 export type GroupPlatform = AccountPlatform | 'composite'
 
+export type VideoBillingUnit = "second" | "generation"
+export interface VideoModelBillingRule {
+  unit: VideoBillingUnit
+  rates?: Record<string, number>
+  spec_rates?: Record<string, number>
+}
+export type VideoModelBillingRules = Record<string, VideoModelBillingRule>
+
 export type VideoModelPrices = Record<string, Record<string, number>>
 
 export type SubscriptionType = 'standard' | 'subscription'
@@ -612,6 +620,7 @@ export interface Group {
   // Optional model-family x resolution overrides for Grok video pricing.
   video_model_prices?: VideoModelPrices
   video_model_spec_prices?: VideoModelPrices
+  video_model_billing_rules?: VideoModelBillingRules | null
   // Codex 网页搜索单次价格（USD/次）；null 表示使用默认价 0.01
   web_search_price_per_call: number | null
   // Grok Voice 显式定价（分组级）
@@ -641,6 +650,8 @@ export interface Group {
 }
 
 export interface AdminGroup extends Group {
+  effective_video_billing_rules?: VideoModelBillingRules
+  video_billing_conflicts?: string[]
   // 管理端的 name / description 始终是原字段，各语言译文另放在 i18n 里
   i18n?: GroupI18n
   force_openai_fast: boolean
@@ -841,6 +852,7 @@ export interface CreateGroupRequest {
   video_price_1080p?: number | null
   video_model_prices?: VideoModelPrices
   video_model_spec_prices?: VideoModelPrices
+  video_model_billing_rules?: VideoModelBillingRules | null
   web_search_price_per_call?: number | null
   search_price_per_1k?: number | null
   audio_realtime_price_per_min?: number | null
@@ -911,6 +923,7 @@ export interface UpdateGroupRequest {
   video_price_1080p?: number | null
   video_model_prices?: VideoModelPrices
   video_model_spec_prices?: VideoModelPrices
+  video_model_billing_rules?: VideoModelBillingRules | null
   web_search_price_per_call?: number | null
   search_price_per_1k?: number | null
   audio_realtime_price_per_min?: number | null

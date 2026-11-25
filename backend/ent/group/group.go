@@ -90,6 +90,8 @@ const (
 	FieldVideoModelPrices = "video_model_prices"
 	// FieldVideoModelSpecPrices holds the string denoting the video_model_spec_prices field in the database.
 	FieldVideoModelSpecPrices = "video_model_spec_prices"
+	// FieldVideoModelBillingRules holds the string denoting the video_model_billing_rules field in the database.
+	FieldVideoModelBillingRules = "video_model_billing_rules"
 	// FieldWebSearchPricePerCall holds the string denoting the web_search_price_per_call field in the database.
 	FieldWebSearchPricePerCall = "web_search_price_per_call"
 	// FieldSearchPricePer1k holds the string denoting the search_price_per_1k field in the database.
@@ -268,6 +270,7 @@ var Columns = []string{
 	FieldVideoPrice1080p,
 	FieldVideoModelPrices,
 	FieldVideoModelSpecPrices,
+	FieldVideoModelBillingRules,
 	FieldWebSearchPricePerCall,
 	FieldSearchPricePer1k,
 	FieldAudioRealtimePricePerMin,

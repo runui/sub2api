@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -222,6 +223,7 @@ type CreateGroupRequest struct {
 	VideoPrice1080P                 *float64                      `json:"video_price_1080p"`
 	VideoModelPrices                map[string]map[string]float64 `json:"video_model_prices,omitempty"`
 	VideoModelSpecPrices            map[string]map[string]float64 `json:"video_model_spec_prices,omitempty"`
+	VideoModelBillingRules          domain.VideoModelBillingRules `json:"video_model_billing_rules"`
 	WebSearchPricePerCall           *float64                      `json:"web_search_price_per_call"`
 	SearchPricePer1k                *float64                      `json:"search_price_per_1k"`
 	AudioRealtimePricePerMin        *float64                      `json:"audio_realtime_price_per_min"`
@@ -301,6 +303,7 @@ type UpdateGroupRequest struct {
 	VideoPrice1080P                 *float64                      `json:"video_price_1080p"`
 	VideoModelPrices                map[string]map[string]float64 `json:"video_model_prices,omitempty"`
 	VideoModelSpecPrices            map[string]map[string]float64 `json:"video_model_spec_prices,omitempty"`
+	VideoModelBillingRules          domain.VideoModelBillingRules `json:"video_model_billing_rules"`
 	WebSearchPricePerCall           *float64                      `json:"web_search_price_per_call"`
 	SearchPricePer1k                *float64                      `json:"search_price_per_1k"`
 	AudioRealtimePricePerMin        *float64                      `json:"audio_realtime_price_per_min"`
@@ -357,7 +360,7 @@ type CompositeRoutePreviewRequest struct {
 }
 
 func (h *GroupHandler) GetVideoPricingCatalog(c *gin.Context) {
-	response.Success(c, service.FalVideoPricingCatalog())
+	response.Success(c, service.VideoBillingCatalog())
 }
 
 // List handles listing all groups with pagination
@@ -713,6 +716,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		VideoPrice1080P:                 req.VideoPrice1080P,
 		VideoModelPrices:                req.VideoModelPrices,
 		VideoModelSpecPrices:            req.VideoModelSpecPrices,
+		VideoModelBillingRules:          req.VideoModelBillingRules,
 		WebSearchPricePerCall:           req.WebSearchPricePerCall,
 		SearchPricePer1k:                req.SearchPricePer1k,
 		AudioRealtimePricePerMin:        req.AudioRealtimePricePerMin,
@@ -863,6 +867,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		VideoPrice1080P:                 req.VideoPrice1080P,
 		VideoModelPrices:                req.VideoModelPrices,
 		VideoModelSpecPrices:            req.VideoModelSpecPrices,
+		VideoModelBillingRules:          req.VideoModelBillingRules,
 		WebSearchPricePerCall:           req.WebSearchPricePerCall,
 		SearchPricePer1k:                req.SearchPricePer1k,
 		AudioRealtimePricePerMin:        req.AudioRealtimePricePerMin,

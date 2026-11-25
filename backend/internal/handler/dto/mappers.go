@@ -146,7 +146,11 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 	if g == nil {
 		return nil
 	}
+	rules, conflicts := g.EffectiveVideoBillingRules()
 	out := &AdminGroup{
+		VideoModelBillingRules:      g.VideoModelBillingRules,
+		EffectiveVideoBillingRules:  rules,
+		VideoBillingConflicts:       conflicts,
 		Group:                       groupFromServiceBase(g),
 		ForceOpenAIFast:             g.ForceOpenAIFast,
 		ForceOpenAIUltrafast:        g.ForceOpenAIUltrafast,

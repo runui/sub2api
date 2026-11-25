@@ -13,7 +13,8 @@ import type {
   CompositeRouteDecision,
   CreateGroupRequest,
   UpdateGroupRequest,
-  PaginatedResponse
+  PaginatedResponse,
+  VideoModelBillingRule
 } from '@/types'
 
 export interface LiveCapability {
@@ -86,18 +87,22 @@ export async function getByPlatform(platform: GroupPlatform): Promise<AdminGroup
   return getAll(platform)
 }
 
-/** 获取当前 Sub2API 服务端的 Live 运行环境能力。 */
-export interface VideoEndpointPricing {
-  endpoint: string
-  unit: 'second' | 'generation'
-  options: { key: string; resolution?: string; duration?: number; aspect_ratio?: string }[]
+export interface VideoBillingModel {
+  id: string
+  name: string
+  aliases?: string[]
+  resolutions: string[]
+  specs?: { key: string; resolution: string; duration: number; aspect_ratio?: string }[]
+  allow_default: boolean
+  recommendation?: VideoModelBillingRule & { source: string; checked_on: string; conditions?: string; estimated?: boolean }
 }
 
-export async function getVideoPricingCatalog(): Promise<VideoEndpointPricing[]> {
-  const { data } = await apiClient.get<VideoEndpointPricing[]>('/admin/groups/video-pricing-catalog')
+export async function getVideoPricingCatalog(): Promise<VideoBillingModel[]> {
+  const { data } = await apiClient.get<VideoBillingModel[]>('/admin/groups/video-pricing-catalog')
   return data
 }
 
+/** 获取当前 Sub2API 服务端的 Live 运行环境能力。 */
 export async function getLiveCapability(): Promise<LiveCapability> {
   const { data } = await apiClient.get<LiveCapability>('/admin/groups/live-capability')
   return data
