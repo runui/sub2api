@@ -146,7 +146,8 @@ func TestAccountHandlerFalModelCatalogKeepsCompleteSnapshot(t *testing.T) {
 	repo.discardWrite = true
 	upstream.resp = &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"models":[{"endpoint_id":"fal-ai/veo3.1/fast","metadata":{"status":"active"}}]}`))}
 	call(http.MethodPost, "/sync-upstream", http.StatusConflict)
-	require.Equal(t, []string{endpoint}, repo.snapshot.Models)
+	require.Empty(t, repo.snapshot.Models)
+	require.Equal(t, endpoint, repo.snapshot.Capabilities[0].ID)
 }
 
 func TestAccountHandlerFalPreviewUsesSelectedProxyWithoutWritingSnapshot(t *testing.T) {

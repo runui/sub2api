@@ -1141,16 +1141,15 @@
             </p>
             <div class="mt-3 space-y-3">
               <div
-                v-for="family in videoModelPriceFamilyRows(createForm.video_model_prices)"
+                v-for="family in videoModelPriceFamilyRows(createForm.video_model_prices).filter(family => !family.key.includes('/'))"
                 :key="family.key"
-                class="grid gap-2 sm:items-end"
-                :class="family.key.includes('/') ? 'sm:grid-cols-[minmax(0,1fr)_repeat(4,minmax(0,7rem))]' : 'sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))]'"
+                class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))] sm:items-end"
               >
                 <div class="min-w-0 pb-1 font-mono text-xs text-gray-700 dark:text-gray-300">
                   {{ family.label }}
                 </div>
                 <label
-                  v-for="resolution in videoModelPriceResolutions(family.key)"
+                  v-for="resolution in grokVideoPriceResolutions"
                   :key="resolution.key"
                   class="block"
                 >
@@ -1168,10 +1167,11 @@
                 </label>
               </div>
             </div>
-            <div class="mt-3 flex gap-2">
-              <input v-model="createVideoEndpoint" class="input min-w-0" :aria-label="t('admin.groups.videoPricing.endpointId')" placeholder="fal-ai/veo3.1/fast" />
-              <button type="button" class="btn btn-secondary shrink-0" @click="addEndpointPrice(createForm.video_model_prices, createVideoEndpoint) && (createVideoEndpoint = '')">{{ t('admin.groups.videoPricing.addEndpoint') }}</button>
-            </div>
+            <GroupVideoEndpointPrices
+              :seconds="createForm.video_model_prices"
+              :specs="createForm.video_model_spec_prices"
+              @price="(unit, endpoint, key, value) => setEndpointPrice(createForm, unit, endpoint, key, value)"
+            />
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             {{ t(videoPricingI18nKey("modeHint")) }}
@@ -2813,16 +2813,15 @@
             </p>
             <div class="mt-3 space-y-3">
               <div
-                v-for="family in videoModelPriceFamilyRows(editForm.video_model_prices)"
+                v-for="family in videoModelPriceFamilyRows(editForm.video_model_prices).filter(family => !family.key.includes('/'))"
                 :key="family.key"
-                class="grid gap-2 sm:items-end"
-                :class="family.key.includes('/') ? 'sm:grid-cols-[minmax(0,1fr)_repeat(4,minmax(0,7rem))]' : 'sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))]'"
+                class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))] sm:items-end"
               >
                 <div class="min-w-0 pb-1 font-mono text-xs text-gray-700 dark:text-gray-300">
                   {{ family.label }}
                 </div>
                 <label
-                  v-for="resolution in videoModelPriceResolutions(family.key)"
+                  v-for="resolution in grokVideoPriceResolutions"
                   :key="resolution.key"
                   class="block"
                 >
@@ -2840,10 +2839,11 @@
                 </label>
               </div>
             </div>
-            <div class="mt-3 flex gap-2">
-              <input v-model="editVideoEndpoint" class="input min-w-0" :aria-label="t('admin.groups.videoPricing.endpointId')" placeholder="fal-ai/veo3.1/fast" />
-              <button type="button" class="btn btn-secondary shrink-0" @click="addEndpointPrice(editForm.video_model_prices, editVideoEndpoint) && (editVideoEndpoint = '')">{{ t('admin.groups.videoPricing.addEndpoint') }}</button>
-            </div>
+            <GroupVideoEndpointPrices
+              :seconds="editForm.video_model_prices"
+              :specs="editForm.video_model_spec_prices"
+              @price="(unit, endpoint, key, value) => setEndpointPrice(editForm, unit, endpoint, key, value)"
+            />
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             {{ t(videoPricingI18nKey("modeHint")) }}
@@ -4439,19 +4439,24 @@ import {
   videoPricingI18nKey,
 } from "./groupsImagePricing";
 import {
-  addVideoEndpointPrice,
   createVideoModelPricesForm,
   serializeVideoModelPrices,
   videoModelPriceFamilyRows,
-  videoModelPriceResolutions,
+  grokVideoPriceResolutions,
+  type VideoModelPricesForm,
 } from "./groupsVideoModelPricing";
 
-const createVideoEndpoint = ref("");
-const editVideoEndpoint = ref("");
-function addEndpointPrice(form: Parameters<typeof addVideoEndpointPrice>[0], endpoint: string) {
-  if (addVideoEndpointPrice(form, endpoint)) return true;
-  appStore.showError(t("admin.groups.videoPricing.invalidEndpoint"));
-  return false;
+import GroupVideoEndpointPrices from "./GroupVideoEndpointPrices.vue";
+
+function setEndpointPrice(
+  form: { video_model_prices: VideoModelPricesForm; video_model_spec_prices: VideoModelPricesForm },
+  unit: "second" | "generation",
+  endpoint: string,
+  key: string,
+  value: string,
+) {
+  const prices = unit === "second" ? form.video_model_prices : form.video_model_spec_prices;
+  (prices[endpoint] ??= {})[key] = value;
 }
 
 const supportsLivePlatform = (platform: string): boolean =>
@@ -5054,6 +5059,7 @@ const createForm = reactive({
   video_price_720p: null as number | null,
   video_price_1080p: null as number | null,
   video_model_prices: createVideoModelPricesForm(),
+  video_model_spec_prices: {} as VideoModelPricesForm,
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
   search_price_per_1k: null as number | null,
@@ -5422,6 +5428,7 @@ const editForm = reactive({
   video_price_720p: null as number | null,
   video_price_1080p: null as number | null,
   video_model_prices: createVideoModelPricesForm(),
+  video_model_spec_prices: {} as VideoModelPricesForm,
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
   search_price_per_1k: null as number | null,
@@ -5891,8 +5898,8 @@ const closeCreateModal = () => {
   createForm.video_price_480p = null;
   createForm.video_price_720p = null;
   createForm.video_price_1080p = null;
-  createVideoEndpoint.value = "";
   createForm.video_model_prices = createVideoModelPricesForm();
+  createForm.video_model_spec_prices = {};
   createForm.long_context_pricing_enabled = true;
   createForm.force_openai_fast = false;
   createForm.force_openai_ultrafast = false;
@@ -6010,6 +6017,7 @@ const handleCreateGroup = async () => {
   try {
     const {
       video_model_prices: _createFormVideoModelPrices,
+      video_model_spec_prices: _createFormVideoModelSpecPrices,
       ...createGroupForm
     } = createForm;
     const videoModelPrices = serializeVideoModelPrices(
@@ -6043,6 +6051,7 @@ const handleCreateGroup = async () => {
       monthly_limit_usd: normalizeOptionalLimit(
         createForm.monthly_limit_usd as number | string | null,
       ),
+      video_model_spec_prices: serializeVideoModelPrices(createForm.video_model_spec_prices),
       ...(Object.keys(videoModelPrices).length > 0
         ? { video_model_prices: videoModelPrices }
         : {}),
@@ -6195,10 +6204,10 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.video_price_480p = group.video_price_480p;
   editForm.video_price_720p = group.video_price_720p;
   editForm.video_price_1080p = group.video_price_1080p;
-  editVideoEndpoint.value = "";
   editForm.video_model_prices = createVideoModelPricesForm(
     group.video_model_prices,
   );
+  editForm.video_model_spec_prices = serializeVideoModelPrices(group.video_model_spec_prices ?? {});
   editForm.web_search_price_per_call = group.web_search_price_per_call ?? null;
   editForm.search_price_per_1k = group.search_price_per_1k ?? null;
   editForm.audio_realtime_price_per_min = group.audio_realtime_price_per_min ?? null;
@@ -6310,6 +6319,7 @@ const closeEditModal = () => {
   editForm.video_price_720p = null;
   editForm.video_price_1080p = null;
   editForm.video_model_prices = createVideoModelPricesForm();
+  editForm.video_model_spec_prices = {};
   editForm.long_context_pricing_enabled = true;
   editForm.force_openai_fast = false;
   editForm.force_openai_ultrafast = false;
@@ -6397,6 +6407,7 @@ const handleUpdateGroup = async () => {
       video_model_prices: serializeVideoModelPrices(
         editForm.video_model_prices,
       ),
+      video_model_spec_prices: serializeVideoModelPrices(editForm.video_model_spec_prices),
       fallback_group_id:
         editForm.fallback_group_id === null ? 0 : editForm.fallback_group_id,
       fallback_group_id_on_invalid_request:

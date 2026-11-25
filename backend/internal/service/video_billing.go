@@ -63,8 +63,8 @@ func CanonicalGrokImagineVideoPriceFamily(model string) string {
 	}
 }
 
-// NormalizeVideoModelPrices cleans and canonicalizes a per-model resolution map.
-// Keys become price families; tiers use 480p/720p/1080p. Negative prices dropped.
+// NormalizeVideoModelPrices cleans the per-second map. Grok aliases collapse
+// to price families; fal endpoints keep their own keys and may use 4k or auto.
 //
 // Model keys are walked in sorted order rather than in Go map order: several
 // aliases can canonicalize onto the same family, and an unordered walk would
@@ -114,6 +114,9 @@ func NormalizeVideoModelPrices(in map[string]map[string]float64) map[string]map[
 				continue
 			}
 			tier, ok := LookupVideoBillingResolution(tierKey)
+			if profile, registered := falVideoProfiles[family]; registered && !profile.SpecPricing && strings.EqualFold(strings.TrimSpace(tierKey), "auto") && len(profile.Resolutions) == 1 && profile.Resolutions[0] == "" {
+				tier, ok = "auto", true
+			}
 			if !ok && strings.EqualFold(strings.TrimSpace(tierKey), "4k") {
 				if _, isFalEndpoint := falVideoProfiles[family]; isFalEndpoint {
 					tier, ok = "4k", true

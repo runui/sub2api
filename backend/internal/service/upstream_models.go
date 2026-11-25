@@ -264,7 +264,11 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 // untouched.
 func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, account *Account) (*UpstreamModelCatalog, error) {
 	if account != nil && account.Platform == PlatformFal {
-		return s.syncAccountModelCatalog(ctx, account, falCatalogSource, s.discoverFalModelCatalog)
+		catalog, err := s.syncAccountModelCatalog(ctx, account, falCatalogSource, s.discoverFalModelCatalog)
+		if err != nil {
+			return nil, err
+		}
+		return projectFalModelCatalog(catalog), nil
 	}
 	fetched, err := s.fetchUpstreamModelListWithObservation(ctx, account)
 	var (
@@ -866,7 +870,7 @@ func (s *AccountTestService) fetchUpstreamModelListRequest(ctx context.Context, 
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		return catalog.Models, nil, nil, nil
+		return projectFalModelCatalog(catalog).Models, nil, nil, nil
 	}
 
 	if account.IsGemini() && account.IsVertexServiceAccount() {

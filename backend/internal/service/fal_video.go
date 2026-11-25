@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -136,38 +135,31 @@ func (s *FalVideoService) Submit(ctx context.Context, req VideoTaskRequest) (vid
 		return replay, err
 	}
 	routingModel := firstNonEmpty(req.RoutingModel, req.Model)
-	account, profile, input, payload, release, err := s.selectAccount(ctx, req, routingModel)
-	if err != nil {
-		return empty, err
-	}
-	defer release()
-	endpoint := profile.Endpoint
 	group := req.APIKey.Group
-	price := falVideoEndpointPrice(group, profile, input.Resolution)
 	multiplier := group.RateMultiplier
 	if s.gateway != nil && !group.VideoRateIndependent {
 		multiplier = s.gateway.ResolveUserGroupRateMultiplier(ctx, req.UserID, req.GroupID, multiplier)
 	}
-	unitPrice := 0.0
-	if price != nil {
-		unitPrice = *price * resolveVideoRateMultiplier(req.APIKey, multiplier)
+	plan, release, err := s.selectAccount(ctx, req, routingModel, resolveVideoRateMultiplier(req.APIKey, multiplier))
+	if err != nil {
+		return empty, err
 	}
-	amount := QuantizeUsageBillingAmount(unitPrice * float64(input.Duration))
-	if amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
-		return empty, fmt.Errorf("%w: configure a positive video price for this model and resolution", ErrVideoTaskInvalid)
-	}
+	defer release()
+	account, profile, input := plan.account, plan.profile, plan.input
+	endpoint := profile.Endpoint
 	fingerprint, err := videoTaskRequestFingerprint(req)
 	if err != nil {
 		return empty, err
 	}
 	task := videotask.Task{ID: videotask.NewID(), Provider: PlatformFal, Model: req.Model, Endpoint: endpoint, Resolution: input.Resolution,
 		UserID: req.UserID, APIKeyID: req.APIKeyID, GroupID: req.GroupID, AccountID: account.ID,
-		Duration: input.Duration, QuotedAmountUSD: amount, IdempotencyKey: req.IdempotencyKey, Fingerprint: fingerprint,
+		Duration: input.Duration, QuotedAmountUSD: plan.amount, IdempotencyKey: req.IdempotencyKey, Fingerprint: fingerprint,
 		ProfileVersion: profile.Version, ResultPath: strings.Join(profile.ResultPath, ".")}
 	task, created, err := s.store.Create(ctx, task)
 	if err != nil {
 		return empty, ErrVideoTaskTemporarilyUnavailable
 	}
+	// Only the request that creates the task may reserve funds and POST to fal.
 	if !created {
 		original, err := videoTaskRequestFingerprint(req)
 		if err != nil || task.Fingerprint != original {
@@ -192,7 +184,7 @@ func (s *FalVideoService) Submit(ctx context.Context, req VideoTaskRequest) (vid
 	invalidateVideoTaskBalance(work, s.cache, s.keys, task.UserID)
 	requestCtx, stop := context.WithTimeout(work, falVideoHTTPTimeout)
 	client, key := s.client(account), account.GetCredential("api_key")
-	ref, err := client.SubmitJSON(requestCtx, key, endpoint, payload)
+	ref, err := client.SubmitJSON(requestCtx, key, endpoint, plan.payload)
 	stop()
 	if err != nil {
 		var upstream *falvideo.Error
@@ -216,10 +208,20 @@ func (s *FalVideoService) Submit(ctx context.Context, req VideoTaskRequest) (vid
 	return task, nil
 }
 
-func (s *FalVideoService) selectAccount(ctx context.Context, req VideoTaskRequest, model string) (*Account, falVideoProfile, falvideo.Input, json.RawMessage, func(), error) {
+// A selected account, wire payload, and quote are one decision. Repricing after
+// account selection could reserve an amount for a different upstream contract.
+type falVideoSubmission struct {
+	account *Account
+	profile falVideoProfile
+	input   falvideo.Input
+	payload json.RawMessage
+	amount  float64
+}
+
+func (s *FalVideoService) selectAccount(ctx context.Context, req VideoTaskRequest, model string, multiplier float64) (falVideoSubmission, func(), error) {
 	accounts, err := s.accounts.ListSchedulableByGroupIDAndPlatform(ctx, req.GroupID, PlatformFal)
 	if err != nil {
-		return nil, falVideoProfile{}, falvideo.Input{}, nil, nil, ErrVideoTaskTemporarilyUnavailable
+		return falVideoSubmission{}, nil, ErrVideoTaskTemporarilyUnavailable
 	}
 	var invalid error
 	var compatible bool
@@ -240,26 +242,28 @@ func (s *FalVideoService) selectAccount(ctx context.Context, req VideoTaskReques
 			invalid = err
 			continue
 		}
-		if price := falVideoEndpointPrice(req.APIKey.Group, profile, input.Resolution); price == nil || !(*price > 0) || math.IsInf(*price, 0) {
-			invalid = fmt.Errorf("%w: configure a positive video price for this model and resolution", ErrVideoTaskInvalid)
+		amount, err := quoteFalVideo(req.APIKey.Group, profile, input, multiplier)
+		if err != nil {
+			invalid = err
 			continue
 		}
+		plan := falVideoSubmission{account: account, profile: profile, input: input, payload: payload, amount: amount}
 		compatible = true
 		if s.concurrency == nil {
-			return account, profile, input, payload, func() {}, nil
+			return plan, func() {}, nil
 		}
 		slot, err := s.concurrency.AcquireAccountSlot(ctx, account.ID, account.Concurrency)
 		if err != nil {
-			return nil, falVideoProfile{}, falvideo.Input{}, nil, nil, ErrVideoTaskTemporarilyUnavailable
+			return falVideoSubmission{}, nil, ErrVideoTaskTemporarilyUnavailable
 		}
 		if slot != nil && slot.Acquired {
-			return account, profile, input, payload, slot.ReleaseFunc, nil
+			return plan, slot.ReleaseFunc, nil
 		}
 	}
 	if invalid != nil && !compatible {
-		return nil, falVideoProfile{}, falvideo.Input{}, nil, nil, invalid
+		return falVideoSubmission{}, nil, invalid
 	}
-	return nil, falVideoProfile{}, falvideo.Input{}, nil, nil, ErrVideoTaskTemporarilyUnavailable
+	return falVideoSubmission{}, nil, ErrVideoTaskTemporarilyUnavailable
 }
 
 func (s *FalVideoService) reject(ctx context.Context, id, code string) {

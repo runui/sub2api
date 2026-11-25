@@ -48,3 +48,30 @@ func TestAPIKeyAuthSnapshotGroupPricingRoundtrip(t *testing.T) {
 	require.InDelta(t, inputPrice, resolved.BasePricing.InputPricePerToken, 1e-12)
 	require.InDelta(t, outputPrice, resolved.BasePricing.OutputPricePerToken, 1e-12)
 }
+
+func TestAPIKeyAuthCacheVideoPricesRoundTrip(t *testing.T) {
+	groupID := int64(50)
+	apiKey := &APIKey{
+		ID: 82, UserID: 40, GroupID: &groupID, Key: "key", Status: StatusActive,
+		User: &User{ID: 40, Status: StatusActive},
+		Group: &Group{
+			ID: groupID,
+			VideoModelPrices: map[string]map[string]float64{
+				"fal-ai/kling-video/v3/pro/text-to-video": {"auto": 0.3},
+			},
+			VideoModelSpecPrices: map[string]map[string]float64{
+				"bytedance/seedance-2.0/image-to-video": {"720p-5s-16x9": 1.25},
+			},
+		},
+	}
+	svc := &APIKeyService{}
+	payload, err := json.Marshal(&APIKeyAuthCacheEntry{Snapshot: svc.snapshotFromAPIKey(context.Background(), apiKey)})
+	require.NoError(t, err)
+	var cached APIKeyAuthCacheEntry
+	require.NoError(t, json.Unmarshal(payload, &cached))
+	materialized, used, err := svc.applyAuthCacheEntry(apiKey.Key, &cached)
+	require.NoError(t, err)
+	require.True(t, used)
+	require.Equal(t, apiKey.Group.VideoModelPrices, materialized.Group.VideoModelPrices)
+	require.Equal(t, apiKey.Group.VideoModelSpecPrices, materialized.Group.VideoModelSpecPrices)
+}

@@ -87,6 +87,17 @@ export async function getByPlatform(platform: GroupPlatform): Promise<AdminGroup
 }
 
 /** 获取当前 Sub2API 服务端的 Live 运行环境能力。 */
+export interface VideoEndpointPricing {
+  endpoint: string
+  unit: 'second' | 'generation'
+  options: { key: string; resolution?: string; duration?: number; aspect_ratio?: string }[]
+}
+
+export async function getVideoPricingCatalog(): Promise<VideoEndpointPricing[]> {
+  const { data } = await apiClient.get<VideoEndpointPricing[]>('/admin/groups/video-pricing-catalog')
+  return data
+}
+
 export async function getLiveCapability(): Promise<LiveCapability> {
   const { data } = await apiClient.get<LiveCapability>('/admin/groups/live-capability')
   return data
@@ -476,6 +487,7 @@ export const groupsAPI = {
   getByPlatform,
   getAllIncludingInactive,
   getLiveCapability,
+  getVideoPricingCatalog,
   getById,
   getModelAllowlistCandidates,
   create,

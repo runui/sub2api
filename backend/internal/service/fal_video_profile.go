@@ -23,12 +23,17 @@ type falVideoProfile struct {
 	Endpoint, Version, ImageField string
 	Durations                     []int
 	DefaultDuration               int
-	DurationSuffix                string
+	DurationEncoding              string
 	Resolutions, AspectRatios     []string
 	DefaultResolution             string
 	DefaultAspectRatio            string
 	MaxPromptChars                int
-	GenerateAudio                 bool
+	SendResolution, SendAspect    bool
+	FixedFields                   map[string]any
+	SpecPricing                   bool
+	ExcludedSpecs                 []falVideoSpec
+	MaxPromptBytes                int
+	EncodeSpec                    func(map[string]any, falVideoSpec)
 	ResultPath                    []string
 }
 
@@ -40,9 +45,10 @@ var falVideoProfiles = func() map[string]falVideoProfile {
 	profiles := make(map[string]falVideoProfile)
 	for _, base := range []string{falVideoVeo31, falVideoVeo31Fast} {
 		profile := falVideoProfile{
-			Endpoint: base, Version: "veo31-v1", Durations: []int{4, 6, 8}, DefaultDuration: 8, DurationSuffix: "s",
+			Endpoint: base, Version: "veo31-v1", Durations: []int{4, 6, 8}, DefaultDuration: 8, DurationEncoding: "seconds_suffix",
 			Resolutions: []string{"720p", "1080p", "4k"}, DefaultResolution: "720p",
 			AspectRatios: []string{"16:9", "9:16"}, DefaultAspectRatio: "16:9", MaxPromptChars: 20000, ResultPath: []string{"video"},
+			SendResolution: true, SendAspect: true, FixedFields: map[string]any{"generate_audio": false},
 		}
 		profiles[base] = profile
 		profile.Endpoint, profile.ImageField = base+"/image-to-video", "image_url"
@@ -50,23 +56,13 @@ var falVideoProfiles = func() map[string]falVideoProfile {
 		profile.DefaultAspectRatio = "auto"
 		profiles[profile.Endpoint] = profile
 	}
+	registerFalVideoProfiles(profiles)
 	return profiles
 }()
 
 func falVideoRegisteredModel(model string) bool {
 	_, exists := falVideoProfiles[model]
 	return exists || model == falVideoUpstreamModel
-}
-
-func falVideoEndpointPrice(group *Group, profile falVideoProfile, resolution string) *float64 {
-	if profile.Version == falVideoImagine15Version {
-		return group.GetVideoPriceForModel(VideoPriceFamilyGrokImagineVideo15, resolution)
-	}
-	// A missing tier must not fall back to the Grok group price or a lower resolution.
-	if price, ok := group.VideoModelPrices[profile.Endpoint][resolution]; ok {
-		return &price
-	}
-	return nil
 }
 
 func prepareFalVideo(model string, req VideoTaskRequest) (falVideoProfile, falvideo.Input, json.RawMessage, error) {
@@ -104,6 +100,9 @@ func prepareFalVideo(model string, req VideoTaskRequest) (falVideoProfile, falvi
 	if profile.MaxPromptChars > 0 && utf8.RuneCountInString(input.Prompt) > profile.MaxPromptChars {
 		return profile, input, nil, fmt.Errorf("%w: prompt is too long for this model", ErrVideoTaskInvalid)
 	}
+	if profile.MaxPromptBytes > 0 && len(input.Prompt) > profile.MaxPromptBytes {
+		return profile, input, nil, fmt.Errorf("%w: prompt is too long for this model", ErrVideoTaskInvalid)
+	}
 	if input.Duration == 0 {
 		input.Duration = profile.DefaultDuration
 	}
@@ -113,27 +112,47 @@ func prepareFalVideo(model string, req VideoTaskRequest) (falVideoProfile, falvi
 	if input.Resolution == "" {
 		input.Resolution = profile.DefaultResolution
 	}
+	if input.Resolution != "" && len(profile.Resolutions) == 1 && profile.Resolutions[0] == "" {
+		return profile, input, nil, fmt.Errorf("%w: omit resolution; this endpoint chooses the output size", ErrVideoTaskInvalid)
+	}
 	if !slices.Contains(profile.Resolutions, input.Resolution) {
 		return profile, input, nil, fmt.Errorf("%w: resolution must be one of %v", ErrVideoTaskInvalid, profile.Resolutions)
 	}
 	if input.AspectRatio == "" {
 		input.AspectRatio = profile.DefaultAspectRatio
 	}
-	if !slices.Contains(profile.AspectRatios, input.AspectRatio) {
+	if (input.AspectRatio != "" || len(profile.AspectRatios) != 0) && !slices.Contains(profile.AspectRatios, input.AspectRatio) {
 		return profile, input, nil, fmt.Errorf("%w: unsupported aspect_ratio", ErrVideoTaskInvalid)
 	}
-	// fal charges separately for audio. Pin this rather than relying on a mutable upstream default.
-	payload := map[string]any{"prompt": input.Prompt, "resolution": input.Resolution, "generate_audio": profile.GenerateAudio}
-	if profile.DurationSuffix != "" {
-		payload["duration"] = strconv.Itoa(input.Duration) + profile.DurationSuffix
-	} else {
+	spec := falVideoSpecFromInput(input)
+	if !profile.allowsSpec(spec) {
+		return profile, input, nil, fmt.Errorf("%w: unsupported resolution and duration combination", ErrVideoTaskInvalid)
+	}
+	// Only send fields the endpoint understands; defaults that change the cost
+	// (such as optional audio) are pinned by its contract, not by the client.
+	payload := map[string]any{"prompt": input.Prompt}
+	for key, value := range profile.FixedFields {
+		payload[key] = value
+	}
+	switch profile.DurationEncoding {
+	case "seconds_suffix":
+		payload["duration"] = strconv.Itoa(input.Duration) + "s"
+	case "string":
+		payload["duration"] = strconv.Itoa(input.Duration)
+	case "integer":
 		payload["duration"] = input.Duration
 	}
-	if input.AspectRatio != "" {
+	if profile.SendResolution {
+		payload["resolution"] = input.Resolution
+	}
+	if profile.SendAspect {
 		payload["aspect_ratio"] = input.AspectRatio
 	}
 	if profile.ImageField != "" {
 		payload[profile.ImageField] = input.ImageURL
+	}
+	if profile.EncodeSpec != nil {
+		profile.EncodeSpec(payload, spec)
 	}
 	body, err := json.Marshal(payload)
 	return profile, input, body, err

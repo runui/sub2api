@@ -22,5 +22,5 @@ func (s *AccountTestService) GetAccountModelCatalog(ctx context.Context, account
 	if catalog == nil {
 		return empty, nil
 	}
-	return catalog, nil
+	return projectFalModelCatalog(catalog), nil
 }

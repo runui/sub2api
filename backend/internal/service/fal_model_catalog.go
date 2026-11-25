@@ -153,14 +153,6 @@ func (s *AccountTestService) discoverFalModelCatalog(ctx context.Context, accoun
 			if model.Metadata.Status != "active" {
 				entry.Reason = "not_active"
 			}
-			if profile, ready := falVideoProfiles[id]; ready && model.Metadata.Status == "active" {
-				entry.Operations, entry.Ready, entry.Reason = []string{"video.generate"}, true, ""
-				entry.RequiresPrice = true
-				entry.InputModalities, entry.OutputModalities = []string{"text"}, []string{"video"}
-				if profile.ImageField != "" {
-					entry.InputModalities = append(entry.InputModalities, "image")
-				}
-			}
 			if (id == falVideoTextEndpoint || id == falVideoImageEndpoint) && model.Metadata.Status == "active" {
 				entry.Reason = "legacy_family_only"
 			}
@@ -191,11 +183,35 @@ func finishFalModelCatalog(entries map[string]UpstreamModelCapability) *Upstream
 	result := &UpstreamModelCatalog{Models: []string{}, DiscoverySource: "upstream"}
 	for _, entry := range entries {
 		result.Capabilities = append(result.Capabilities, entry)
-		if entry.Ready {
-			result.Models = append(result.Models, entry.ID)
-		}
 	}
-	sort.Strings(result.Models)
 	sort.Slice(result.Capabilities, func(i, j int) bool { return result.Capabilities[i].ID < result.Capabilities[j].ID })
 	return result
+}
+
+// Project current adapter support over discovery, including older snapshots.
+// Neither prices nor the runtime submission gate determine catalog selection.
+func projectFalModelCatalog(result *UpstreamModelCatalog) *UpstreamModelCatalog {
+	copy := *result
+	copy.Models = []string{}
+	copy.Capabilities = append([]UpstreamModelCapability(nil), result.Capabilities...)
+	for i := range copy.Capabilities {
+		entry := &copy.Capabilities[i]
+		profile, registered := falVideoProfiles[entry.ID]
+		entry.Ready = entry.Status == "active" && (registered || entry.ID == falVideoUpstreamModel)
+		entry.RequiresPrice = entry.Ready && registered
+		if !entry.Ready {
+			if entry.Reason == "" {
+				entry.Reason = "not_adapted"
+			}
+			continue
+		}
+		entry.Reason, entry.Operations, entry.OutputModalities = "", []string{"video.generate"}, []string{"video"}
+		entry.InputModalities = []string{"text"}
+		if profile.ImageField != "" || entry.ID == falVideoUpstreamModel {
+			entry.InputModalities = append(entry.InputModalities, "image")
+		}
+		copy.Models = append(copy.Models, entry.ID)
+	}
+	sort.Strings(copy.Models)
+	return &copy
 }

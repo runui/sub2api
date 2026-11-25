@@ -51,6 +51,30 @@ func TestGroupRepoSuite(t *testing.T) {
 	suite.Run(t, new(GroupRepoSuite))
 }
 
+func (s *GroupRepoSuite) TestVideoPricingUnitsPersistIndependently() {
+	group := &service.Group{
+		Name: "video-pricing-roundtrip", Platform: service.PlatformGrok, RateMultiplier: 1,
+		Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard,
+		VideoModelPrices: map[string]map[string]float64{
+			"fal-ai/kling-video/v3/pro/text-to-video": {"auto": 0.25},
+		},
+		VideoModelSpecPrices: map[string]map[string]float64{
+			"bytedance/seedance-2.0/text-to-video": {"720p-5s-16x9": 1.25},
+		},
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+	saved, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(group.VideoModelPrices, saved.VideoModelPrices)
+	s.Require().Equal(group.VideoModelSpecPrices, saved.VideoModelSpecPrices)
+	saved.VideoModelSpecPrices = nil
+	s.Require().NoError(s.repo.Update(s.ctx, saved))
+	cleared, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().Empty(cleared.VideoModelSpecPrices)
+	s.Require().Equal(group.VideoModelPrices, cleared.VideoModelPrices)
+}
+
 func TestModerationConfigWriteRejectsGroupDeletedAfterValidation(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

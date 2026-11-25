@@ -510,6 +510,12 @@ func (_c *GroupCreate) SetVideoModelPrices(v map[string]map[string]float64) *Gro
 	return _c
 }
 
+// SetVideoModelSpecPrices sets the "video_model_spec_prices" field.
+func (_c *GroupCreate) SetVideoModelSpecPrices(v map[string]map[string]float64) *GroupCreate {
+	_c.mutation.SetVideoModelSpecPrices(v)
+	return _c
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (_c *GroupCreate) SetWebSearchPricePerCall(v float64) *GroupCreate {
 	_c.mutation.SetWebSearchPricePerCall(v)
@@ -1644,6 +1650,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldVideoModelPrices, field.TypeJSON, value)
 		_node.VideoModelPrices = value
 	}
+	if value, ok := _c.mutation.VideoModelSpecPrices(); ok {
+		_spec.SetField(group.FieldVideoModelSpecPrices, field.TypeJSON, value)
+		_node.VideoModelSpecPrices = value
+	}
 	if value, ok := _c.mutation.WebSearchPricePerCall(); ok {
 		_spec.SetField(group.FieldWebSearchPricePerCall, field.TypeFloat64, value)
 		_node.WebSearchPricePerCall = &value
@@ -2505,6 +2515,24 @@ func (u *GroupUpsert) UpdateVideoModelPrices() *GroupUpsert {
 // ClearVideoModelPrices clears the value of the "video_model_prices" field.
 func (u *GroupUpsert) ClearVideoModelPrices() *GroupUpsert {
 	u.SetNull(group.FieldVideoModelPrices)
+	return u
+}
+
+// SetVideoModelSpecPrices sets the "video_model_spec_prices" field.
+func (u *GroupUpsert) SetVideoModelSpecPrices(v map[string]map[string]float64) *GroupUpsert {
+	u.Set(group.FieldVideoModelSpecPrices, v)
+	return u
+}
+
+// UpdateVideoModelSpecPrices sets the "video_model_spec_prices" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateVideoModelSpecPrices() *GroupUpsert {
+	u.SetExcluded(group.FieldVideoModelSpecPrices)
+	return u
+}
+
+// ClearVideoModelSpecPrices clears the value of the "video_model_spec_prices" field.
+func (u *GroupUpsert) ClearVideoModelSpecPrices() *GroupUpsert {
+	u.SetNull(group.FieldVideoModelSpecPrices)
 	return u
 }
 
@@ -3741,6 +3769,27 @@ func (u *GroupUpsertOne) UpdateVideoModelPrices() *GroupUpsertOne {
 func (u *GroupUpsertOne) ClearVideoModelPrices() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.ClearVideoModelPrices()
+	})
+}
+
+// SetVideoModelSpecPrices sets the "video_model_spec_prices" field.
+func (u *GroupUpsertOne) SetVideoModelSpecPrices(v map[string]map[string]float64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVideoModelSpecPrices(v)
+	})
+}
+
+// UpdateVideoModelSpecPrices sets the "video_model_spec_prices" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateVideoModelSpecPrices() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVideoModelSpecPrices()
+	})
+}
+
+// ClearVideoModelSpecPrices clears the value of the "video_model_spec_prices" field.
+func (u *GroupUpsertOne) ClearVideoModelSpecPrices() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearVideoModelSpecPrices()
 	})
 }
 
@@ -5229,6 +5278,27 @@ func (u *GroupUpsertBulk) UpdateVideoModelPrices() *GroupUpsertBulk {
 func (u *GroupUpsertBulk) ClearVideoModelPrices() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.ClearVideoModelPrices()
+	})
+}
+
+// SetVideoModelSpecPrices sets the "video_model_spec_prices" field.
+func (u *GroupUpsertBulk) SetVideoModelSpecPrices(v map[string]map[string]float64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVideoModelSpecPrices(v)
+	})
+}
+
+// UpdateVideoModelSpecPrices sets the "video_model_spec_prices" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateVideoModelSpecPrices() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVideoModelSpecPrices()
+	})
+}
+
+// ClearVideoModelSpecPrices clears the value of the "video_model_spec_prices" field.
+func (u *GroupUpsertBulk) ClearVideoModelSpecPrices() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearVideoModelSpecPrices()
 	})
 }
 
