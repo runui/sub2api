@@ -185,8 +185,8 @@ function apply() {
   const model = entry.value
   const row = draft.value
   if (!row || !model) return
-  const rates = parseRates(row.rates, model.allow_default)
-  const specRates = parseRates(row.specRates, model.allow_default)
+  const rates = parseRates(row.rates, model.allow_zero_rate)
+  const specRates = parseRates(row.specRates, model.allow_zero_rate)
   if (!row.unit || !rates || !specRates || !Object.keys({ ...rates, ...specRates }).length) { invalid.value = true; return }
   emit('update', { ...props.rules, [row.id]: { unit: row.unit, rates, spec_rates: specRates } })
   close()

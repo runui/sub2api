@@ -255,6 +255,18 @@ describe("GroupsView OpenAI forced service tier", () => {
     wrapper.unmount();
   });
 
+  it("keeps model rates editable when video generation is disabled", async () => {
+    const wrapper = await openEditDialog({ ...sourceGroup, allow_video_generation: true });
+    const permission = wrapper.get<HTMLInputElement>('[data-testid="edit-allow-video-generation"]');
+    expect(permission.element.checked).toBe(true);
+    await permission.setValue(false);
+    expect(wrapper.text()).toContain('admin.groups.videoPricing.addModel');
+    const payload = await submit(wrapper);
+    expect(payload.allow_video_generation).toBe(false);
+    expect(payload.video_model_billing_rules).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it.each([
     [{ force_openai_fast: true, force_openai_ultrafast: false }],
     [{ force_openai_fast: false, force_openai_ultrafast: true }],

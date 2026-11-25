@@ -128,11 +128,14 @@ func (s *FalVideoService) Submit(ctx context.Context, req VideoTaskRequest) (vid
 	if req.GroupID <= 0 || req.UserID <= 0 || req.APIKeyID <= 0 || req.APIKey == nil || req.APIKey.Group == nil || req.APIKey.Group.ID != req.GroupID {
 		return empty, ErrVideoTaskNotFound
 	}
-	if req.SubscriptionID != 0 || req.Subscription != nil || req.APIKey.Group.IsSubscriptionType() {
-		return empty, fmt.Errorf("%w: fal video requires a balance-billed group", ErrVideoTaskInvalid)
-	}
 	if replay, found, err := replayVideoTask(ctx, s.store, req); found || err != nil {
 		return replay, err
+	}
+	if !req.APIKey.Group.AllowVideoGeneration {
+		return empty, ErrVideoGenerationDisabled
+	}
+	if req.SubscriptionID != 0 || req.Subscription != nil || req.APIKey.Group.IsSubscriptionType() {
+		return empty, fmt.Errorf("%w: fal video requires a balance-billed group", ErrVideoTaskInvalid)
 	}
 	routingModel := firstNonEmpty(req.RoutingModel, req.Model)
 	group := req.APIKey.Group
@@ -233,32 +236,31 @@ func (s *FalVideoService) selectAccount(ctx context.Context, req VideoTaskReques
 		if !ok || !account.IsSchedulable() {
 			continue
 		}
-		if upstream != falVideoUpstreamModel && s.gateway != nil && s.gateway.cfg != nil && !s.gateway.cfg.Gateway.FalVideoProfilesEnabled {
-			continue
-		}
 		// Resolve the request and price from the same configured endpoint.
 		profile, input, payload, err := prepareFalVideo(upstream, req)
 		if err != nil {
 			invalid = err
 			continue
 		}
+		compatible = true
+		release := func() {}
+		if s.concurrency != nil {
+			slot, err := s.concurrency.AcquireAccountSlot(ctx, account.ID, account.Concurrency)
+			if err != nil {
+				return falVideoSubmission{}, nil, ErrVideoTaskTemporarilyUnavailable
+			}
+			if slot == nil || !slot.Acquired {
+				continue
+			}
+			release = slot.ReleaseFunc
+		}
+		// Quote only the selected account's contract: missing pricing must not reroute.
 		amount, err := quoteFalVideo(req.APIKey.Group, profile, input, multiplier)
 		if err != nil {
-			invalid = err
-			continue
+			release()
+			return falVideoSubmission{}, nil, err
 		}
-		plan := falVideoSubmission{account: account, profile: profile, input: input, payload: payload, amount: amount}
-		compatible = true
-		if s.concurrency == nil {
-			return plan, func() {}, nil
-		}
-		slot, err := s.concurrency.AcquireAccountSlot(ctx, account.ID, account.Concurrency)
-		if err != nil {
-			return falVideoSubmission{}, nil, ErrVideoTaskTemporarilyUnavailable
-		}
-		if slot != nil && slot.Acquired {
-			return plan, slot.ReleaseFunc, nil
-		}
+		return falVideoSubmission{account: account, profile: profile, input: input, payload: payload, amount: amount}, release, nil
 	}
 	if invalid != nil && !compatible {
 		return falVideoSubmission{}, nil, invalid

@@ -45,7 +45,7 @@ func newGatewayRoutesTestRouterWithConfig(cfg *config.Config, platform ...string
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
 				GroupID: &groupID,
-				Group:   &service.Group{ID: groupID, Platform: groupPlatform},
+				Group:   &service.Group{ID: groupID, Platform: groupPlatform, AllowVideoGeneration: true},
 			})
 			c.Next()
 		}),
@@ -398,17 +398,27 @@ func TestGatewayRoutesVideoAliasesDispatchExplicitModel(t *testing.T) {
 	}}})
 	router := gin.New()
 	tasks := service.ProvideVideoTaskService(nil, &service.FalVideoService{})
+	group := &service.Group{ID: groupID, Platform: service.PlatformComposite}
 	RegisterGatewayRoutes(router, &handler.Handlers{VideoTask: handler.NewVideoTaskHandler(tasks, nil)}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
-		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformComposite}})
+		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: group})
 		c.Next()
 	}), nil, nil, nil, nil, resolver, &config.Config{Gateway: config.GatewayConfig{MaxBodySize: 1024 * 1024}})
 
 	for _, path := range []string{"/v1/videos", "/v1/videos/generations", "/videos", "/videos/generations"} {
+		group.AllowVideoGeneration = false
+		disabled := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"public-video","prompt":"test"}`))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(disabled, req)
+		require.Equal(t, http.StatusForbidden, disabled.Code)
+		require.Contains(t, disabled.Body.String(), "video_generation_disabled")
+
+		group.AllowVideoGeneration = true
 		var body bytes.Buffer
 		form := multipart.NewWriter(&body)
 		require.NoError(t, form.WriteField("model", "public-video"))
 		require.NoError(t, form.Close())
-		req := httptest.NewRequest(http.MethodPost, path, &body)
+		req = httptest.NewRequest(http.MethodPost, path, &body)
 		req.Header.Set("Content-Type", form.FormDataContentType())
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)

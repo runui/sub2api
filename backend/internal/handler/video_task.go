@@ -111,8 +111,8 @@ func (h *VideoTaskHandler) create(c *gin.Context, key *service.APIKey, subject m
 		writeVideoTaskServiceError(c, service.ErrVideoTaskNotFound, "")
 		return
 	}
-	if !service.GroupAllowsImageGeneration(key.Group) {
-		videoTaskError(c, http.StatusForbidden, "permission_error", "", service.ImageGenerationPermissionMessage(), "")
+	if !key.Group.AllowVideoGeneration {
+		writeVideoTaskServiceError(c, service.ErrVideoGenerationDisabled, "")
 		return
 	}
 	if strings.HasPrefix(mediaType, "multipart/") {
@@ -427,6 +427,10 @@ func copyVideoTaskRangeHeaders(c *gin.Context, resp *http.Response) {
 
 func writeVideoTaskServiceError(c *gin.Context, err error, id string) {
 	switch {
+	case errors.Is(err, service.ErrVideoGenerationDisabled):
+		videoTaskError(c, http.StatusForbidden, "permission_error", "video_generation_disabled", service.ErrVideoGenerationDisabled.Error(), "")
+	case errors.Is(err, service.ErrVideoModelPriceMissing):
+		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "video_price_missing", service.ErrVideoModelPriceMissing.Error(), "")
 	case errors.Is(err, service.ErrVideoTaskInvalid):
 		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "", service.ErrVideoTaskInvalid.Error(), "")
 	case errors.Is(err, service.ErrVideoTaskNotFound):

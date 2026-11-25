@@ -49,6 +49,10 @@ func (e GrokMediaEndpoint) RequiresRequestBody() bool {
 	return !e.IsVideoLookupRequest()
 }
 
+func (e GrokMediaEndpoint) IsNativeVideoCreate() bool {
+	return e == GrokMediaEndpointVideosGenerations || e == GrokMediaEndpointVideosEdits || e == GrokMediaEndpointVideosExtensions
+}
+
 func (e GrokMediaEndpoint) IsVideoLookupRequest() bool {
 	return e == GrokMediaEndpointVideoStatus || e == GrokMediaEndpointVideoContent || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete
 }
@@ -66,19 +70,20 @@ func (e GrokMediaEndpoint) IsGenerationRequest() bool {
 }
 
 type GrokMediaRequestInfo struct {
-	Model           string
-	Prompt          string
-	N               int
-	Size            string
-	SizeTier        string
-	AspectRatio     string
-	ImageResolution string
-	Resolution      string
-	DurationSeconds int
-	InputImageURLs  []string
-	MaskImageURL    string
-	Uploads         []OpenAIImagesUpload
-	MaskUpload      *OpenAIImagesUpload
+	Model               string
+	Prompt              string
+	N                   int
+	Size                string
+	SizeTier            string
+	AspectRatio         string
+	ImageResolution     string
+	Resolution          string
+	requestedResolution string
+	DurationSeconds     int
+	InputImageURLs      []string
+	MaskImageURL        string
+	Uploads             []OpenAIImagesUpload
+	MaskUpload          *OpenAIImagesUpload
 }
 
 func (r GrokMediaRequestInfo) ModerationBody() []byte {
@@ -664,7 +669,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	requestID string,
 	body []byte,
 	contentType string,
-	billingKeys ...*APIKey,
+	billingKey *APIKey,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 	if account == nil {
@@ -721,17 +726,18 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 
 	var quote *FrozenVideoBillingQuote
 	unifiedBilling := false
-	if len(billingKeys) != 0 {
-		switch endpoint {
-		case GrokMediaEndpointVideosGenerations, GrokMediaEndpointVideosEdits, GrokMediaEndpointVideosExtensions:
-			key := billingKeys[0]
-			unifiedBilling = key != nil && key.Group != nil && key.Group.VideoModelBillingRules != nil
-			// Resolve after account mapping, but before any chargeable upstream POST.
-			quote, err = s.freezeGrokVideoRule(ctx, key, requestInfo.Model, upstreamModel, requestInfo)
-			if err != nil {
-				return nil, err
+	if endpoint.IsNativeVideoCreate() {
+		if requestInfo.requestedResolution != "" {
+			if _, ok := LookupVideoBillingResolution(requestInfo.requestedResolution); !ok {
+				return nil, &GrokMediaInputValidationError{Reason: "unsupported video resolution"}
 			}
 		}
+		// Resolve after account mapping, but before any chargeable upstream POST.
+		quote, err = s.freezeGrokVideoRule(ctx, billingKey, upstreamModel, requestInfo)
+		if err != nil {
+			return nil, err
+		}
+		unifiedBilling = true
 	}
 
 	var bodyReader io.Reader

@@ -55,7 +55,7 @@ func TestVideoModelRoutingDoesNotGuessProvider(t *testing.T) {
 	require.False(t, decision.Matched)
 }
 
-func TestVideoModelRoutingDisabledProfileDoesNotClaimGrokAlias(t *testing.T) {
+func TestVideoModelRoutingRegisteredFalAndGrokAliasIsAmbiguous(t *testing.T) {
 	const model = "shared-video"
 	grok := Account{Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"model_mapping": map[string]any{model: "grok-imagine-video"},
@@ -64,8 +64,7 @@ func TestVideoModelRoutingDisabledProfileDoesNotClaimGrokAlias(t *testing.T) {
 		"api_key": "test-key", "model_mapping": map[string]any{model: falVideoVeo31},
 	}}
 	accounts := []Account{grok, fal}
-	require.True(t, videoModelOwnershipWithProfiles(accounts, model, true).Ambiguous)
-	require.Equal(t, CompositeModelOwnership{TargetPlatform: PlatformGrok, Matched: true}, videoModelOwnershipWithProfiles(accounts, model, false))
+	require.True(t, videoModelOwnership(accounts, model).Ambiguous)
 }
 
 func TestVideoModelSchedulerRejectsOutOfGroupAndTextAccounts(t *testing.T) {

@@ -17,33 +17,49 @@ type FrozenVideoBillingQuote struct {
 	Seconds    int           `json:"seconds"`
 }
 
-func (s *OpenAIGatewayService) freezeGrokVideoRule(ctx context.Context, key *APIKey, billingModel, upstreamModel string, req GrokMediaRequestInfo) (*FrozenVideoBillingQuote, error) {
-	if key == nil || key.Group == nil || key.Group.VideoModelBillingRules == nil {
-		return nil, nil
+func (s *OpenAIGatewayService) freezeGrokVideoRule(ctx context.Context, key *APIKey, upstreamModel string, req GrokMediaRequestInfo) (*FrozenVideoBillingQuote, error) {
+	if key == nil || key.Group == nil || !key.Group.AllowVideoGeneration {
+		return nil, ErrVideoGenerationDisabled
 	}
 	id := CanonicalGrokImagineVideoPriceFamily(upstreamModel)
 	if id == "" {
-		id = CanonicalGrokImagineVideoPriceFamily(billingModel)
+		return nil, ErrVideoModelPriceMissing
 	}
-	rule, configured := key.Group.VideoModelBillingRules[id]
-	// Keep the existing explicit group video and token pricing precedence.
-	if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, key); resolved != nil && resolved.Mode == BillingModeToken {
-		return nil, nil
+	tier := NormalizeVideoBillingResolutionOrDefault(req.Resolution)
+	seconds := NormalizeVideoBillingDurationSecondsOrDefault(req.DurationSeconds)
+	unit, rate, ok := exactGroupVideoRate(key.Group, id, tier, "", false)
+	if !ok || !validModelVideoRate(rate, id == VideoPriceFamilyGrokImagineVideo || id == VideoPriceFamilyGrokImagineVideo15) {
+		return nil, ErrVideoModelPriceMissing
 	}
 	multiplier := key.Group.RateMultiplier
 	if !key.Group.VideoRateIndependent && key.GroupID != nil {
 		multiplier = s.ResolveUserGroupRateMultiplier(ctx, key.UserID, *key.GroupID, multiplier)
 	}
 	multiplier = resolveVideoRateMultiplier(key, multiplier)
-	result := &OpenAIForwardResult{VideoResolution: req.Resolution, VideoDurationSeconds: req.DurationSeconds, UnifiedVideoBilling: true}
-	cost, err := s.calculateOpenAIVideoCostWithRule(ctx, billingModel, key, result, multiplier, rule, configured)
-	if err != nil {
-		return nil, err
-	}
+	cost := videoRuleCost(unit, rate, 1, seconds, multiplier)
 	if math.IsNaN(cost.ActualCost) || math.IsInf(cost.ActualCost, 0) || math.IsNaN(cost.TotalCost) || math.IsInf(cost.TotalCost, 0) {
 		return nil, &GrokMediaInputValidationError{Reason: "configured video price exceeds the billing range"}
 	}
-	return &FrozenVideoBillingQuote{Cost: *cost, Multiplier: multiplier, Seconds: req.DurationSeconds}, nil
+	return &FrozenVideoBillingQuote{Cost: *cost, Multiplier: multiplier, Seconds: seconds}, nil
+}
+
+// Legacy maps supply only explicit model rates. A saved unified table (even
+// an empty one) replaces them entirely; defaults and channel rates never grant access.
+func exactGroupVideoRate(group *Group, id, tier, spec string, legacySpecPricing bool) (string, float64, bool) {
+	if group.VideoModelBillingRules != nil {
+		rule, exists := group.VideoModelBillingRules[id]
+		if !exists || (rule.Unit != domain.VideoBillingPerSecond && rule.Unit != domain.VideoBillingPerGeneration) {
+			return "", 0, false
+		}
+		rate, ok := videoRuleRate(rule, tier, spec)
+		return rule.Unit, rate, ok
+	}
+	if legacySpecPricing {
+		rate, ok := group.VideoModelSpecPrices[id][spec]
+		return domain.VideoBillingPerGeneration, rate, ok
+	}
+	rate, ok := group.VideoModelPrices[id][tier]
+	return domain.VideoBillingPerSecond, rate, ok
 }
 
 func cloneVideoBillingRules(in domain.VideoModelBillingRules) domain.VideoModelBillingRules {
@@ -56,7 +72,7 @@ func cloneVideoBillingRules(in domain.VideoModelBillingRules) domain.VideoModelB
 }
 
 // EffectiveVideoBillingRules projects legacy prices for the editor only. The
-// runtime uses legacy behavior until the group explicitly saves unified rules.
+// runtime uses explicit legacy model prices until the group saves unified rules.
 // A non-nil empty map must not resurrect legacy prices after a deletion.
 func (g *Group) EffectiveVideoBillingRules() (domain.VideoModelBillingRules, []string) {
 	if g.VideoModelBillingRules != nil {
@@ -111,7 +127,7 @@ func validateVideoBillingRules(rules, previous domain.VideoModelBillingRules) er
 			if oldPrice, ok := old.Rates[key]; ok && old.Unit == rule.Unit && oldPrice == price {
 				continue
 			}
-			if !slices.Contains(model.Resolutions, key) || !validModelVideoRate(price, model.AllowDefault) {
+			if !slices.Contains(model.Resolutions, key) || !validModelVideoRate(price, model.AllowZeroRate) {
 				return invalidVideoBillingRule(id, "invalid resolution or rate: "+key)
 			}
 		}
@@ -119,7 +135,7 @@ func validateVideoBillingRules(rules, previous domain.VideoModelBillingRules) er
 			if oldPrice, ok := old.SpecRates[key]; ok && old.Unit == rule.Unit && oldPrice == price {
 				continue
 			}
-			if !slices.ContainsFunc(model.Specs, func(option VideoPriceOption) bool { return option.Key == key }) || !validModelVideoRate(price, model.AllowDefault) {
+			if !slices.ContainsFunc(model.Specs, func(option VideoPriceOption) bool { return option.Key == key }) || !validModelVideoRate(price, model.AllowZeroRate) {
 				return invalidVideoBillingRule(id, "invalid output spec or rate: "+key)
 			}
 		}

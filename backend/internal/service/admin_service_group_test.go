@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
@@ -1404,6 +1405,41 @@ func TestAdminService_UpdateGroup_ForceOpenAIFastInvalidatesAuthCache(t *testing
 	require.True(t, repo.updated.ForceOpenAIFast)
 	require.True(t, repo.updated.FreeOpenAIFast)
 	require.Equal(t, []int64{existingGroup.ID}, invalidator.groupIDs)
+}
+
+func TestAdminService_UpdateGroup_VideoPermissionInvalidatesAuthCache(t *testing.T) {
+	group := &Group{ID: 1, Name: "video", Platform: PlatformComposite, Status: StatusActive, AllowImageGeneration: true}
+	repo := &groupRepoStubForAdmin{getByID: group}
+	invalidator := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{groupRepo: repo, authCacheInvalidator: invalidator}
+	for _, enabled := range []bool{true, false} {
+		updated, err := svc.UpdateGroup(context.Background(), group.ID, &UpdateGroupInput{AllowVideoGeneration: &enabled})
+		require.NoError(t, err)
+		require.Equal(t, enabled, updated.AllowVideoGeneration)
+		require.True(t, updated.AllowImageGeneration)
+	}
+	require.Equal(t, []int64{group.ID, group.ID}, invalidator.groupIDs)
+}
+
+func TestAdminService_SavesVideoRatesWithoutRouteOrPermission(t *testing.T) {
+	ctx := context.Background()
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+	model := "bytedance/seedance-2.0/fast/text-to-video"
+	rules := domain.VideoModelBillingRules{model: {
+		Unit: domain.VideoBillingPerGeneration, SpecRates: map[string]float64{"720p-5s-16x9": 1.5},
+	}}
+	group, err := svc.CreateGroup(ctx, &CreateGroupInput{
+		Name: "video", Platform: PlatformComposite, RateMultiplier: 1, VideoModelBillingRules: rules,
+	})
+	require.NoError(t, err)
+	require.False(t, group.AllowVideoGeneration)
+	require.Equal(t, rules, group.VideoModelBillingRules)
+	repo.getByID = group
+	updated, err := svc.UpdateGroup(ctx, group.ID, &UpdateGroupInput{VideoModelBillingRules: domain.VideoModelBillingRules{}})
+	require.NoError(t, err)
+	require.False(t, updated.AllowVideoGeneration)
+	require.Equal(t, domain.VideoModelBillingRules{}, updated.VideoModelBillingRules)
 }
 
 func TestAdminService_UpdateCompositeGroupPreservesLive(t *testing.T) {

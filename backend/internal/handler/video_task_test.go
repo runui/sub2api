@@ -42,7 +42,8 @@ func TestVideoTaskReplayBeforeBillingWithRouteRemoved(t *testing.T) {
 			return videotask.Task{ID: "vidtask_123"}, true, nil
 		},
 	}}
-	c, w, _ := videoTaskTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+videoTestModel+`","prompt":"waves"}`))
+	c, w, key := videoTaskTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+videoTestModel+`","prompt":"waves"}`))
+	key.Group.AllowVideoGeneration = false
 	c.Request.Header.Set("Idempotency-Key", "original")
 	body, err := io.ReadAll(c.Request.Body)
 	require.NoError(t, err)
@@ -69,7 +70,7 @@ func videoTaskTestContext(method, path string, body io.Reader) (*gin.Context, *h
 	c.Request = httptest.NewRequest(method, path, body)
 	c.Params = gin.Params{{Key: "request_id", Value: "vidtask_123"}}
 	groupID := int64(9)
-	key := &service.APIKey{ID: 8, UserID: 7, GroupID: &groupID, Group: &service.Group{ID: groupID, AllowImageGeneration: true}}
+	key := &service.APIKey{ID: 8, UserID: 7, GroupID: &groupID, Group: &service.Group{ID: groupID, AllowVideoGeneration: true}}
 	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7})
 	c.Set(string(middleware.ContextKeyAPIKey), key)
 	return c, w, key
@@ -133,7 +134,8 @@ func TestVideoTaskCreatePermissionsAndErrors(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, w, key := videoTaskTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+videoTestModel+`","prompt":"waves"}`))
-			key.Group.AllowImageGeneration = tc.err != nil
+			key.Group.AllowImageGeneration = true
+			key.Group.AllowVideoGeneration = tc.err != nil
 			h := &VideoTaskHandler{tasks: &videoTaskTestTasks{submit: func(service.VideoTaskRequest) (videotask.Task, error) {
 				require.NotNil(t, tc.err, "disabled groups must not submit")
 				return videotask.Task{ID: "vidtask_123"}, fmt.Errorf("provider debug secret: %w", tc.err)

@@ -13,7 +13,7 @@ type VideoBillingModel struct {
 	Aliases        []string                    `json:"aliases,omitempty"`
 	Resolutions    []string                    `json:"resolutions"`
 	Specs          []VideoPriceOption          `json:"specs,omitempty"`
-	AllowDefault   bool                        `json:"allow_default"`
+	AllowZeroRate  bool                        `json:"allow_zero_rate"`
 	Recommendation *VideoBillingRecommendation `json:"recommendation,omitempty"`
 }
 
@@ -34,9 +34,9 @@ type VideoBillingRecommendation struct {
 
 func VideoBillingCatalog() []VideoBillingModel {
 	rows := []VideoBillingModel{
-		{ID: VideoPriceFamilyGrokImagineVideo, Name: "Grok Imagine Video", Resolutions: falImagineVideoResolutions, AllowDefault: true,
+		{ID: VideoPriceFamilyGrokImagineVideo, Name: "Grok Imagine Video", Resolutions: falImagineVideoResolutions, AllowZeroRate: true,
 			Recommendation: &VideoBillingRecommendation{VideoModelBillingRule: domain.VideoModelBillingRule{Unit: domain.VideoBillingPerSecond, Rates: map[string]float64{"480p": .05, "720p": .07}}, Source: "https://docs.x.ai/developers/models/grok-imagine-video", CheckedOn: "2026-11-25", Conditions: "xai_output_only"}},
-		{ID: VideoPriceFamilyGrokImagineVideo15, Name: "Grok Imagine Video 1.5", Aliases: []string{falVideoUpstreamModel, falVideoTextEndpoint, falVideoImageEndpoint}, Resolutions: falImagineVideoResolutions, AllowDefault: true,
+		{ID: VideoPriceFamilyGrokImagineVideo15, Name: "Grok Imagine Video 1.5", Aliases: []string{falVideoUpstreamModel, falVideoTextEndpoint, falVideoImageEndpoint}, Resolutions: falImagineVideoResolutions, AllowZeroRate: true,
 			Recommendation: &VideoBillingRecommendation{VideoModelBillingRule: domain.VideoModelBillingRule{Unit: domain.VideoBillingPerSecond, Rates: map[string]float64{"480p": .08, "720p": .14, "1080p": .25}}, Source: "https://fal.ai/models/" + falVideoImageEndpoint + "/llms.txt", CheckedOn: "2026-11-25", Conditions: "output_only"}},
 	}
 	for id, p := range falVideoProfiles {

@@ -261,7 +261,7 @@ func grokMediaSlotContext(ctx context.Context, generation bool) (*gin.Context, *
 	c.Request = req
 	c.Params = gin.Params{{Key: "request_id", Value: "task"}}
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 20, UserID: 10, GroupID: &groupID,
-		Group: &service.Group{ID: groupID, Platform: service.PlatformGrok, AllowImageGeneration: true}, User: &service.User{ID: 10}})
+		Group: &service.Group{ID: groupID, Platform: service.PlatformGrok, AllowVideoGeneration: true, RateMultiplier: 1, VideoModelPrices: map[string]map[string]float64{service.VideoPriceFamilyGrokImagineVideo: {"480p": .1}}}, User: &service.User{ID: 10}})
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 10, Concurrency: 5})
 	return c, w
 }
@@ -410,6 +410,7 @@ func TestGrokMediaVideoCompletionStillClaimsBillingOnce(t *testing.T) {
 	subject := middleware2.AuthSubject{UserID: 10, Concurrency: 5}
 	result := &service.OpenAIForwardResult{ResponseID: "task", Model: "grok-imagine-video",
 		VideoCount: 1, VideoDurationSeconds: 6}
+	require.NoError(t, h.gatewayService.StoreGrokVideoPendingBilling(c.Request.Context(), "task", key.UserID, key.ID, service.GrokVideoPendingBilling{VideoResolution: "480p"}))
 	for i := range 20 {
 		bill := prepareGrokVideoCompletionBilling(c.Request.Context(), h, zap.NewNop(), key, subject, "task", result)
 		if i == 0 {
@@ -447,6 +448,7 @@ func TestGrokMediaUnifiedVideoBillingFreezesBeforeSubmit(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, 1, upstream.calls)
 	slots.assertReleased(t)
+	key.Group.AllowVideoGeneration = false
 	key.Group.VideoModelBillingRules = domain.VideoModelBillingRules{}
 
 	subject := middleware2.AuthSubject{UserID: key.UserID, Concurrency: 5}
@@ -458,4 +460,20 @@ func TestGrokMediaUnifiedVideoBillingFreezesBeforeSubmit(t *testing.T) {
 	require.Equal(t, 6, bill.VideoDurationSeconds)
 	require.Nil(t, prepareGrokVideoCompletionBilling(c.Request.Context(), h, zap.NewNop(), key, subject, "task", result))
 	require.Len(t, bindings.billed, 1)
+}
+
+func TestGrokMediaVideoPermissionCoversAllCreates(t *testing.T) {
+	h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false)
+	for _, create := range []func(*gin.Context){h.GrokVideoGeneration, h.GrokVideoEdit, h.GrokVideoExtension} {
+		c, w := grokMediaSlotContext(context.Background(), true)
+		key, ok := middleware2.GetAPIKeyFromContext(c)
+		require.True(t, ok)
+		key.Group.AllowImageGeneration = true
+		key.Group.AllowVideoGeneration = false
+		create(c)
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Contains(t, w.Body.String(), "video_generation_disabled")
+	}
+	require.Zero(t, slots.acquired)
+	require.Zero(t, upstream.calls)
 }

@@ -1110,9 +1110,10 @@ export default {
         singleClipAudioOff: '单片段、关闭音频',
         outputOnly: '仅含输出费用，不含输入费用。',
         title: '视频生成计费',
-        description: '统一配置视频模型费率。只有允许回退的模型才使用分组默认费率。',
+        description: '新建视频任务必须匹配模型和规格费率，不使用分组默认价。',
+        allowGeneration: '允许视频生成',
+        allowGenerationHint: '关闭后不接受新任务，已有任务仍可查询、下载和结算。关闭时仍可编辑费率。',
         modelOverridesTitle: '模型视频费率',
-        defaultRates: '分组默认费率（美元/秒）',
         catalogFailed: '无法加载视频模型目录。',
         retryCatalog: '重试',
         automaticResolution: '自动分辨率（由上游决定）',
@@ -1122,7 +1123,6 @@ export default {
         independentMultiplier: '视频倍率独立',
         videoMultiplier: '视频独立倍率',
         modeHint: '按秒价格乘以时长，按次价格只收取一次。两种价格均使用有效分组倍率或视频独立倍率。',
-        finalPricePreview: '最终每秒价格预览',
         notConfigured: '未配置'
       },
       explicitPricing: {

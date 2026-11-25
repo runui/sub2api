@@ -1113,9 +1113,10 @@ export default {
         singleClipAudioOff: 'Single clip, audio off',
         outputOnly: 'Output cost only; input charges are excluded.',
         title: 'Video Generation Pricing',
-        description: 'Configure video rates by model. Group default rates apply only where fallback is allowed.',
+        description: 'New video tasks require a matching model and output rate. Group defaults do not apply.',
+        allowGeneration: 'Allow video generation',
+        allowGenerationHint: 'When disabled, existing tasks can still be checked, downloaded, and settled. Rates remain editable.',
         modelOverridesTitle: 'Video model rates',
-        defaultRates: 'Group default rates (USD/s)',
         catalogFailed: 'Could not load the video model catalog.',
         retryCatalog: 'Retry',
         automaticResolution: 'Upstream-selected resolution',
@@ -1125,7 +1126,6 @@ export default {
         independentMultiplier: 'Use independent video multiplier',
         videoMultiplier: 'Video multiplier',
         modeHint: 'Per-second prices multiply by duration. Per-generation prices apply once. Both use the effective group multiplier or the independent video multiplier.',
-        finalPricePreview: 'Final per-second price preview',
         notConfigured: 'Not configured'
       },
       explicitPricing: {

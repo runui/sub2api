@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideo"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/videotask"
 	"github.com/stretchr/testify/require"
@@ -158,7 +157,7 @@ func (u *falVideoTestUsage) Create(_ context.Context, log *UsageLog) (bool, erro
 
 func falVideoFixture() (*FalVideoService, *falVideoTestStore, *falVideoTestBilling, *falVideoTestUsage, VideoTaskRequest) {
 	req := VideoTaskRequest{Model: "configured-video", Prompt: "a lighthouse at dusk", UserID: 10, APIKeyID: 20, GroupID: 30, IdempotencyKey: "generation-key"}
-	req.APIKey = &APIKey{Group: &Group{ID: req.GroupID, RateMultiplier: 1, VideoPrice720P: testVideoPrice(0.25), VideoPrice480P: testVideoPrice(0.125)}}
+	req.APIKey = &APIKey{Group: &Group{ID: req.GroupID, RateMultiplier: 1, AllowVideoGeneration: true, VideoModelPrices: map[string]map[string]float64{VideoPriceFamilyGrokImagineVideo15: {"720p": .25, "480p": .125}}}}
 	store := &falVideoTestStore{now: time.Now()}
 	billing, usage := &falVideoTestBilling{}, &falVideoTestUsage{}
 	s := &FalVideoService{
@@ -182,7 +181,6 @@ func TestFalVideoProfileSubmissionPollReplayAndFrozenQuote(t *testing.T) {
 		t.Run(tc.endpoint, func(t *testing.T) {
 			ctx := context.Background()
 			s, store, billing, usage, req := falVideoFixture()
-			s.gateway = &GatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{FalVideoProfilesEnabled: true}}}
 			req.APIKey.Group.VideoRateIndependent = true
 			req.APIKey.Group.VideoRateMultiplier = 1
 			account := s.accounts.(falVideoTestAccounts).account
@@ -222,7 +220,7 @@ func TestFalVideoProfileSubmissionPollReplayAndFrozenQuote(t *testing.T) {
 			require.Equal(t, "veo31-v1", ack.ProfileVersion)
 			delete(account.Credentials, "model_mapping")
 			req.APIKey.Group.VideoModelPrices = nil
-			s.gateway.cfg.Gateway.FalVideoProfilesEnabled = false
+			req.APIKey.Group.AllowVideoGeneration = false
 			replay, err := s.Submit(ctx, req)
 			require.NoError(t, err)
 			require.Equal(t, ack.ID, replay.ID)
@@ -242,18 +240,37 @@ func TestFalVideoProfileRequiresExactGroupPrice(t *testing.T) {
 	s, store, billing, _, req := falVideoFixture()
 	s.accounts.(falVideoTestAccounts).account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
 	_, err := s.Submit(context.Background(), req)
-	require.ErrorContains(t, err, "positive video price")
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
 	require.Empty(t, billing.reserved)
 	require.Empty(t, store.task.ID)
 }
 
-func TestFalVideoProfileGateBlocksNewSubmissionsOnly(t *testing.T) {
+func TestFalVideoMissingPriceDoesNotChooseAnotherEndpoint(t *testing.T) {
 	s, store, billing, _, req := falVideoFixture()
-	s.gateway = &GatewayService{cfg: &config.Config{}}
+	first := s.accounts.(falVideoTestAccounts).account
+	second := *first
+	second.ID++
+	first.Credentials = map[string]any{"api_key": falVideoTestKey, "model_mapping": map[string]any{req.Model: falVideoVeo31}}
+	s.accounts = falVideoPoolRepo{accounts: []Account{*first, second}}
+	req.APIKey.Group.VideoPrice720P = testVideoPrice(99)
+	_, err := s.Submit(context.Background(), req)
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
+	require.Empty(t, store.task.ID)
+	require.Empty(t, billing.reserved)
+	// The older Imagine adapter must not fall back to the flat price either.
+	s.accounts = falVideoPoolRepo{accounts: []Account{second}}
+	req.APIKey.Group.VideoModelPrices = nil
+	_, err = s.Submit(context.Background(), req)
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
+}
+
+func TestFalVideoGroupGateBlocksNewSubmissions(t *testing.T) {
+	s, store, billing, _, req := falVideoFixture()
 	s.accounts.(falVideoTestAccounts).account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
 	req.APIKey.Group.VideoModelPrices = map[string]map[string]float64{falVideoVeo31: {"720p": 1}}
+	req.APIKey.Group.AllowVideoGeneration = false
 	_, err := s.Submit(context.Background(), req)
-	require.ErrorIs(t, err, ErrVideoTaskTemporarilyUnavailable)
+	require.ErrorIs(t, err, ErrVideoGenerationDisabled)
 	require.Empty(t, billing.reserved)
 	require.Empty(t, store.task.ID)
 }

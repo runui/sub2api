@@ -71,6 +71,8 @@ func TestAPIKeyAuthCacheVideoPricesRoundTrip(t *testing.T) {
 		apiKey.Group.VideoModelBillingRules = rules
 		testVideoAuthCacheRoundTrip(t, apiKey)
 	}
+	apiKey.Group.AllowVideoGeneration = true
+	testVideoAuthCacheRoundTrip(t, apiKey)
 }
 
 func testVideoAuthCacheRoundTrip(t *testing.T, apiKey *APIKey) {
@@ -86,4 +88,5 @@ func testVideoAuthCacheRoundTrip(t *testing.T, apiKey *APIKey) {
 	require.Equal(t, apiKey.Group.VideoModelPrices, materialized.Group.VideoModelPrices)
 	require.Equal(t, apiKey.Group.VideoModelSpecPrices, materialized.Group.VideoModelSpecPrices)
 	require.Equal(t, apiKey.Group.VideoModelBillingRules, materialized.Group.VideoModelBillingRules)
+	require.Equal(t, apiKey.Group.AllowVideoGeneration, materialized.Group.AllowVideoGeneration)
 }

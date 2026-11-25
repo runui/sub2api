@@ -1068,6 +1068,13 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t(videoPricingI18nKey("description")) }}
           </p>
+          <label class="mb-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input v-model="createForm.allow_video_generation" type="checkbox" data-testid="create-allow-video-generation" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            {{ t(videoPricingI18nKey("allowGeneration")) }}
+          </label>
+          <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">
+            {{ t(videoPricingI18nKey("allowGenerationHint")) }}
+          </p>
           <div class="mb-4">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
@@ -1098,58 +1105,9 @@
             :rules="createForm.video_model_billing_rules"
             @update="createForm.video_model_billing_rules = $event; createVideoBillingDirty = true"
           />
-          <p class="mb-2 mt-4 text-sm font-medium">{{ t(videoPricingI18nKey("defaultRates")) }}</p>
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <label class="input-label">480p ($/s)</label>
-              <input
-                v-model.number="createForm.video_price_480p"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                :placeholder="getVideoPricePlaceholder(createForm.platform, 'video_price_480p')"
-              />
-            </div>
-            <div>
-              <label class="input-label">720p ($/s)</label>
-              <input
-                v-model.number="createForm.video_price_720p"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                :placeholder="getVideoPricePlaceholder(createForm.platform, 'video_price_720p')"
-              />
-            </div>
-            <div>
-              <label class="input-label">1080p ($/s)</label>
-              <input
-                v-model.number="createForm.video_price_1080p"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                :placeholder="getVideoPricePlaceholder(createForm.platform, 'video_price_1080p')"
-              />
-            </div>
-          </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             {{ t(videoPricingI18nKey("modeHint")) }}
           </p>
-          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <div class="mb-1 font-medium">
-              {{ t(videoPricingI18nKey("finalPricePreview")) }}
-            </div>
-            <div class="grid grid-cols-3 gap-2">
-              <div
-                v-for="item in createVideoFinalPricePreview"
-                :key="item.label"
-              >
-                {{ item.label }}: {{ item.value }}
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
@@ -2701,6 +2659,13 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t(videoPricingI18nKey("description")) }}
           </p>
+          <label class="mb-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input v-model="editForm.allow_video_generation" type="checkbox" data-testid="edit-allow-video-generation" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            {{ t(videoPricingI18nKey("allowGeneration")) }}
+          </label>
+          <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">
+            {{ t(videoPricingI18nKey("allowGenerationHint")) }}
+          </p>
           <div class="mb-4">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
@@ -2732,58 +2697,9 @@
             :conflicts="editVideoBillingConflicts"
             @update="editForm.video_model_billing_rules = $event; editVideoBillingDirty = true"
           />
-          <p class="mb-2 mt-4 text-sm font-medium">{{ t(videoPricingI18nKey("defaultRates")) }}</p>
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <label class="input-label">480p ($/s)</label>
-              <input
-                v-model.number="editForm.video_price_480p"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                :placeholder="getVideoPricePlaceholder(editForm.platform, 'video_price_480p')"
-              />
-            </div>
-            <div>
-              <label class="input-label">720p ($/s)</label>
-              <input
-                v-model.number="editForm.video_price_720p"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                :placeholder="getVideoPricePlaceholder(editForm.platform, 'video_price_720p')"
-              />
-            </div>
-            <div>
-              <label class="input-label">1080p ($/s)</label>
-              <input
-                v-model.number="editForm.video_price_1080p"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                :placeholder="getVideoPricePlaceholder(editForm.platform, 'video_price_1080p')"
-              />
-            </div>
-          </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             {{ t(videoPricingI18nKey("modeHint")) }}
           </p>
-          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <div class="mb-1 font-medium">
-              {{ t(videoPricingI18nKey("finalPricePreview")) }}
-            </div>
-            <div class="grid grid-cols-3 gap-2">
-              <div
-                v-for="item in editVideoFinalPricePreview"
-                :key="item.label"
-              >
-                {{ item.label }}: {{ item.value }}
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
@@ -4353,9 +4269,7 @@ import {
 import {
   defaultAllowImageGenerationForPlatform,
   getDefaultImagePreviewPrice,
-  getDefaultVideoPreviewPrice,
   getImagePricePlaceholder,
-  getVideoPricePlaceholder,
   imagePricingI18nKey,
   supportsImagePricingPlatform,
   supportsVideoPricingPlatform,
@@ -4952,6 +4866,7 @@ const createForm = reactive({
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   allow_batch_image_generation: false,
   image_count_billing: false,
   image_rate_independent: false,
@@ -4964,9 +4879,6 @@ const createForm = reactive({
   // 视频生成计费配置（仅 Grok 平台）
   video_rate_independent: false,
   video_rate_multiplier: 1,
-  video_price_480p: null as number | null,
-  video_price_720p: null as number | null,
-  video_price_1080p: null as number | null,
   video_model_billing_rules: {} as VideoModelBillingRules,
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
@@ -5320,6 +5232,7 @@ const editForm = reactive({
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   allow_batch_image_generation: false,
   image_count_billing: false,
   image_rate_independent: false,
@@ -5332,9 +5245,6 @@ const editForm = reactive({
   // 视频生成计费配置（仅 Grok 平台）
   video_rate_independent: false,
   video_rate_multiplier: 1,
-  video_price_480p: null as number | null,
-  video_price_720p: null as number | null,
-  video_price_1080p: null as number | null,
   video_model_billing_rules: {} as VideoModelBillingRules,
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
@@ -5400,26 +5310,10 @@ type ImagePricingFormState = {
   peak_rate_multiplier: number;
 };
 
-type VideoPricingFormState = {
-  platform: GroupPlatform;
-  rate_multiplier: number;
-  video_rate_independent: boolean;
-  video_rate_multiplier: number;
-  video_price_480p: number | string | null;
-  video_price_720p: number | string | null;
-  video_price_1080p: number | string | null;
-};
-
 const imagePricingTiers = [
   { key: "image_price_1k", label: "1K" },
   { key: "image_price_2k", label: "2K" },
   { key: "image_price_4k", label: "4K" },
-] as const;
-
-const videoPricingTiers = [
-  { key: "video_price_480p", label: "480p" },
-  { key: "video_price_720p", label: "720p" },
-  { key: "video_price_1080p", label: "1080p" },
 ] as const;
 
 const normalizePreviewNumber = (value: number | string | null | undefined, fallback = 0) => {
@@ -5449,17 +5343,6 @@ const formatImagePricePreview = (value: number | string | null | undefined) => {
   return `$${price.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
 };
 
-const formatVideoPricePreview = (value: number | string | null | undefined) => {
-  if (value === null || value === undefined || value === "") {
-    return t("admin.groups.videoPricing.notConfigured");
-  }
-  const price = Number(value);
-  if (!Number.isFinite(price) || price < 0) {
-    return t("admin.groups.videoPricing.notConfigured");
-  }
-  return `$${price.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
-};
-
 const buildImageFinalPricePreview = (form: ImagePricingFormState) => {
   const imageMultiplier = form.image_rate_independent
     ? normalizePreviewNumber(form.image_rate_multiplier, 1)
@@ -5478,36 +5361,12 @@ const buildImageFinalPricePreview = (form: ImagePricingFormState) => {
   });
 };
 
-const buildVideoFinalPricePreview = (form: VideoPricingFormState) => {
-  const multiplier = form.video_rate_independent
-    ? normalizePreviewNumber(form.video_rate_multiplier, 1)
-    : normalizePreviewNumber(form.rate_multiplier, 1);
-  return videoPricingTiers.map((tier) => {
-    const basePrice =
-      parsePreviewPrice(form[tier.key]) ??
-      getDefaultVideoPreviewPrice(form.platform, tier.key);
-    return {
-      label: tier.label,
-      value: basePrice !== null
-        ? formatVideoPricePreview(basePrice * multiplier)
-        : t("admin.groups.videoPricing.notConfigured"),
-    };
-  });
-};
-
 const createImageFinalPricePreview = computed(() =>
   buildImageFinalPricePreview(createForm),
 );
 const editImageFinalPricePreview = computed(() =>
   buildImageFinalPricePreview(editForm),
 );
-const createVideoFinalPricePreview = computed(() =>
-  buildVideoFinalPricePreview(createForm),
-);
-const editVideoFinalPricePreview = computed(() =>
-  buildVideoFinalPricePreview(editForm),
-);
-
 // Codex 网页搜索单次默认价（与后端 defaultWebSearchPricePerCall 一致，官方 $10/1000 次）
 const DEFAULT_WEB_SEARCH_PRICE_PER_CALL = 0.01;
 
@@ -5791,6 +5650,7 @@ const closeCreateModal = () => {
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
   createForm.allow_image_generation = false;
+  createForm.allow_video_generation = false;
   createForm.allow_batch_image_generation = false;
   createForm.image_count_billing = false;
   createForm.image_rate_independent = false;
@@ -5802,9 +5662,6 @@ const closeCreateModal = () => {
   createForm.image_price_4k = null;
   createForm.video_rate_independent = false;
   createForm.video_rate_multiplier = 1;
-  createForm.video_price_480p = null;
-  createForm.video_price_720p = null;
-  createForm.video_price_1080p = null;
   createForm.video_model_billing_rules = {};
   createVideoBillingDirty.value = false;
   createForm.long_context_pricing_enabled = true;
@@ -6009,9 +5866,6 @@ const handleCreateGroup = async () => {
     requestData.image_price_1k = emptyToNull(requestData.image_price_1k);
     requestData.image_price_2k = emptyToNull(requestData.image_price_2k);
     requestData.image_price_4k = emptyToNull(requestData.image_price_4k);
-    requestData.video_price_480p = emptyToNull(requestData.video_price_480p);
-    requestData.video_price_720p = emptyToNull(requestData.video_price_720p);
-    requestData.video_price_1080p = emptyToNull(requestData.video_price_1080p);
     requestData.search_price_per_1k = emptyToNull(
       requestData.search_price_per_1k,
     );
@@ -6085,6 +5939,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.free_openai_fast = group.free_openai_fast ?? false;
   editForm.model_pricing = groupPricingFromAPI(group.model_pricing);
   editForm.allow_image_generation = group.allow_image_generation ?? false;
+  editForm.allow_video_generation = group.allow_video_generation ?? false;
   editForm.allow_batch_image_generation =
     group.allow_batch_image_generation ?? false;
   editForm.image_count_billing = group.image_count_billing ?? false;
@@ -6098,9 +5953,6 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.image_price_4k = group.image_price_4k;
   editForm.video_rate_independent = group.video_rate_independent ?? false;
   editForm.video_rate_multiplier = group.video_rate_multiplier ?? 1;
-  editForm.video_price_480p = group.video_price_480p;
-  editForm.video_price_720p = group.video_price_720p;
-  editForm.video_price_1080p = group.video_price_1080p;
   editForm.video_model_billing_rules = group.effective_video_billing_rules ?? group.video_model_billing_rules ?? {};
   editVideoBillingDirty.value = false;
   editVideoBillingConflicts.value = group.video_billing_conflicts ?? [];
@@ -6211,9 +6063,7 @@ const closeEditModal = () => {
   editForm.profit_safety_buffer_percent = 0;
   editForm.video_rate_independent = false;
   editForm.video_rate_multiplier = 1;
-  editForm.video_price_480p = null;
-  editForm.video_price_720p = null;
-  editForm.video_price_1080p = null;
+  editForm.allow_video_generation = false;
   editForm.video_model_billing_rules = {};
   editVideoBillingDirty.value = false;
   editVideoBillingConflicts.value = [];
@@ -6374,9 +6224,6 @@ const handleUpdateGroup = async () => {
     payload.image_price_1k = emptyPriceToClear(payload.image_price_1k);
     payload.image_price_2k = emptyPriceToClear(payload.image_price_2k);
     payload.image_price_4k = emptyPriceToClear(payload.image_price_4k);
-    payload.video_price_480p = emptyPriceToClear(payload.video_price_480p);
-    payload.video_price_720p = emptyPriceToClear(payload.video_price_720p);
-    payload.video_price_1080p = emptyPriceToClear(payload.video_price_1080p);
     payload.search_price_per_1k = emptyPriceToClear(
       payload.search_price_per_1k,
     );

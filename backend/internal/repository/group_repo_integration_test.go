@@ -87,18 +87,23 @@ func (s *GroupRepoSuite) TestUnifiedVideoBillingNullAndEmptyRoundTrip() {
 	saved, err := s.repo.GetByIDLite(s.ctx, group.ID)
 	s.Require().NoError(err)
 	s.Require().Nil(saved.VideoModelBillingRules)
+	s.Require().False(saved.AllowVideoGeneration)
 	rules, _ := saved.EffectiveVideoBillingRules()
 	s.Require().Equal(.25, rules[id].Rates["auto"])
 	saved.VideoModelBillingRules = domain.VideoModelBillingRules{id: {Unit: domain.VideoBillingPerGeneration, Rates: map[string]float64{"auto": .5}}}
+	saved.AllowVideoGeneration = true
 	s.Require().NoError(s.repo.Update(s.ctx, saved))
 	configured, err := s.repo.GetByID(s.ctx, group.ID)
 	s.Require().NoError(err)
 	s.Require().Equal(saved.VideoModelBillingRules, configured.VideoModelBillingRules)
+	s.Require().True(configured.AllowVideoGeneration)
 	configured.VideoModelBillingRules = domain.VideoModelBillingRules{}
+	configured.AllowVideoGeneration = false
 	s.Require().NoError(s.repo.Update(s.ctx, configured))
 	cleared, err := s.repo.GetByID(s.ctx, group.ID)
 	s.Require().NoError(err)
 	s.Require().NotNil(cleared.VideoModelBillingRules)
+	s.Require().False(cleared.AllowVideoGeneration)
 	rules, _ = cleared.EffectiveVideoBillingRules()
 	s.Require().Empty(rules)
 	s.Require().Equal(group.VideoModelPrices, cleared.VideoModelPrices)

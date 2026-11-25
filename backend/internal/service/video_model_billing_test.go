@@ -23,10 +23,10 @@ func TestUnifiedVideoBillingFalUnitsAndExactAuto(t *testing.T) {
 	}
 	group.VideoModelBillingRules[id] = domain.VideoModelBillingRule{Unit: "second", Rates: map[string]float64{"1080p": 9}}
 	_, err := quoteFalVideo(group, p, input, 1)
-	require.ErrorIs(t, err, ErrVideoTaskInvalid)
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
 	group.VideoModelBillingRules = domain.VideoModelBillingRules{}
 	_, err = quoteFalVideo(group, p, input, 1)
-	require.ErrorIs(t, err, ErrVideoTaskInvalid)
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
 }
 
 func TestUnifiedVideoBillingLegacyProjectionAndSpecPrecedence(t *testing.T) {
@@ -64,14 +64,37 @@ func TestUnifiedVideoBillingRecommendationsMatchCatalog(t *testing.T) {
 	}
 }
 
+func TestNativeVideoRequiresMatchingModelRate(t *testing.T) {
+	ctx := context.Background()
+	s := &OpenAIGatewayService{}
+	id := VideoPriceFamilyGrokImagineVideo
+	key := &APIKey{Group: &Group{RateMultiplier: 2, VideoPrice720P: testVideoPrice(9),
+		VideoModelPrices: map[string]map[string]float64{id: {"720p": .25}},
+	}}
+	req := GrokMediaRequestInfo{Resolution: "720p", DurationSeconds: 4}
+	_, err := s.freezeGrokVideoRule(ctx, key, id, req)
+	require.ErrorIs(t, err, ErrVideoGenerationDisabled)
+	key.Group.AllowVideoGeneration = true
+	quote, err := s.freezeGrokVideoRule(ctx, key, id, req)
+	require.NoError(t, err)
+	require.Equal(t, 2.0, quote.Cost.ActualCost)
+	_, err = s.freezeGrokVideoRule(ctx, key, VideoPriceFamilyGrokImagineVideo15, req)
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
+	_, err = s.freezeGrokVideoRule(ctx, key, id, GrokMediaRequestInfo{Resolution: "1080p"})
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
+	key.Group.VideoModelBillingRules = domain.VideoModelBillingRules{}
+	_, err = s.freezeGrokVideoRule(ctx, key, id, req)
+	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
+}
+
 func TestUnifiedVideoBillingGrokFrozenQuoteSurvivesPriceAndDurationChanges(t *testing.T) {
 	ctx := context.Background()
 	s := &OpenAIGatewayService{billingService: &BillingService{}}
 	id := VideoPriceFamilyGrokImagineVideo
-	key := &APIKey{Group: &Group{RateMultiplier: 2, VideoModelBillingRules: domain.VideoModelBillingRules{
+	key := &APIKey{Group: &Group{RateMultiplier: 2, AllowVideoGeneration: true, VideoModelBillingRules: domain.VideoModelBillingRules{
 		id: {Unit: "generation", Rates: map[string]float64{"720p": .5}},
 	}}}
-	quote, err := s.freezeGrokVideoRule(ctx, key, "alias", id, GrokMediaRequestInfo{DurationSeconds: 5, Resolution: "720p"})
+	quote, err := s.freezeGrokVideoRule(ctx, key, id, GrokMediaRequestInfo{DurationSeconds: 5, Resolution: "720p"})
 	require.NoError(t, err)
 	require.Equal(t, 1.0, quote.Cost.ActualCost)
 	payload, err := json.Marshal(GrokVideoPendingBilling{VideoBillingQuote: quote, UnifiedVideoBilling: true})

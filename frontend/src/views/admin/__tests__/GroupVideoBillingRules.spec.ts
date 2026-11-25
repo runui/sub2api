@@ -7,9 +7,9 @@ vi.mock('@/api/admin/groups', () => ({ getVideoPricingCatalog: getCatalog }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 
 const models = [
-  { id: 'kling/pro', name: 'Kling Pro', aliases: ['cinema'], resolutions: ['auto'], allow_default: false,
+  { id: 'kling/pro', name: 'Kling Pro', aliases: ['cinema'], resolutions: ['auto'], allow_zero_rate: false,
     recommendation: { unit: 'second', rates: { auto: .112 }, source: 'https://example.com/price', checked_on: '2026-11-25' } },
-  { id: 'manual/model', name: 'Manual Model', resolutions: ['720p'], allow_default: false }
+  { id: 'manual/model', name: 'Manual Model', resolutions: ['720p'], allow_zero_rate: false }
 ]
 
 function button(wrapper: ReturnType<typeof mount>, suffix: string) {

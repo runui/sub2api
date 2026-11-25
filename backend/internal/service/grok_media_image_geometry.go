@@ -72,6 +72,7 @@ func assignGrokMediaResolution(value string, info *GrokMediaRequestInfo) {
 		return
 	}
 	value = strings.TrimSpace(value)
+	info.requestedResolution = value
 	if value == "" {
 		return
 	}

@@ -128,7 +128,15 @@ func RegisterGatewayRoutes(
 		body = requestmodel.TrimUTF8BOM(body)
 		model := service.ExtractGrokMediaModel(c.GetHeader("Content-Type"), body)
 		// Replay belongs to the original task even if the model now routes elsewhere.
-		if h.VideoTask.ReplayCreate(c, model, body) || middleware.RejectVideoTaskSpendingDenial(c) {
+		if h.VideoTask.ReplayCreate(c, model, body) {
+			return
+		}
+		if !key.Group.AllowVideoGeneration {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "code": "video_generation_disabled", "message": service.ErrVideoGenerationDisabled.Error()}})
+			return
+		}
+		if middleware.RejectVideoTaskSpendingDenial(c) {
 			return
 		}
 		if model == "" {

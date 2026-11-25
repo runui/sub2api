@@ -90,7 +90,7 @@ func TestGrokMediaInternalErrorsAreNotInputValidation(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			svc := &OpenAIGatewayService{}
-			_, err := svc.ForwardGrokMedia(context.Background(), nil, test.account, GrokMediaEndpointImagesEdits, "", []byte(`{"images":[]}`), "application/json")
+			_, err := svc.ForwardGrokMedia(context.Background(), nil, test.account, GrokMediaEndpointImagesEdits, "", []byte(`{"images":[]}`), "application/json", nil)
 			require.Error(t, err)
 			var validationErr *GrokMediaInputValidationError
 			require.NotErrorAs(t, err, &validationErr)

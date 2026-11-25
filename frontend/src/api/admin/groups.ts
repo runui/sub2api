@@ -93,7 +93,7 @@ export interface VideoBillingModel {
   aliases?: string[]
   resolutions: string[]
   specs?: { key: string; resolution: string; duration: number; aspect_ratio?: string }[]
-  allow_default: boolean
+  allow_zero_rate: boolean
   recommendation?: VideoModelBillingRule & { source: string; checked_on: string; conditions?: string; estimated?: boolean }
 }
 

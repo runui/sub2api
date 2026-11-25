@@ -67,6 +67,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return
 	}
+	if endpoint.IsNativeVideoCreate() && (apiKey.Group == nil || !apiKey.Group.AllowVideoGeneration) {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		writeVideoTaskServiceError(c, service.ErrVideoGenerationDisabled, "")
+		return
+	}
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
@@ -133,7 +138,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
 	if endpoint.IsGenerationRequest() {
-		if !service.GroupAllowsImageGeneration(apiKey.Group) {
+		if !endpoint.IsNativeVideoCreate() && !service.GroupAllowsImageGeneration(apiKey.Group) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 			return
 		}
@@ -405,6 +410,10 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
 
 		if err != nil {
+			if errors.Is(err, service.ErrVideoModelPriceMissing) || errors.Is(err, service.ErrVideoGenerationDisabled) {
+				writeVideoTaskServiceError(c, err, "")
+				return
+			}
 			var validationErr *service.GrokMediaInputValidationError
 			if errors.As(err, &validationErr) {
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", validationErr.Error())
@@ -498,9 +507,8 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					zap.Error(err),
 				)
 			}
-			// Defer billing until status polling observes video.url. Persist create-time
-			// model/duration/resolution so status can still price if upstream omits them.
-			// Retry once: missing pending causes silent underpricing (status omits resolution).
+			// Status and download share deferred billing. Persist the frozen charge
+			// because neither the status payload nor the current group can recover it.
 			pending := service.GrokVideoPendingBilling{
 				Model:                requestModel,
 				BillingModel:         firstNonEmptyString(result.BillingModel, requestModel),
@@ -590,14 +598,7 @@ func grokMediaScheduleModel(account *service.Account, routingModel string, resul
 }
 
 func isGrokVideoCreateEndpoint(endpoint service.GrokMediaEndpoint) bool {
-	switch endpoint {
-	case service.SeedanceEndpointCreate, service.GrokMediaEndpointVideosGenerations,
-		service.GrokMediaEndpointVideosEdits,
-		service.GrokMediaEndpointVideosExtensions:
-		return true
-	default:
-		return false
-	}
+	return endpoint.IsNativeVideoCreate() || endpoint == service.SeedanceEndpointCreate
 }
 
 // shouldRecordGrokMediaUsage gates usage writes for immediate (image) generation.
@@ -649,26 +650,9 @@ func prepareGrokVideoCompletionBilling(
 		reqLog.Warn("grok_media.video_pending_billing_load_failed", zap.String("request_id", taskRequestID), zap.Error(loadErr))
 	}
 	if pending == nil {
-		// With unified rules a missing snapshot could mean a lost frozen charge;
-		// never guess a price or unit from the current group in that case.
-		if !strings.HasPrefix(taskRequestID, "seedance:") && apiKey.Group != nil && apiKey.Group.VideoModelBillingRules != nil {
-			reqLog.Error("grok_media.video_billing_skipped_missing_pending", zap.String("request_id", taskRequestID))
-			return nil
-		}
-		// Status omits resolution; without pending we would silently default to 480p and underbill.
-		// Allow billing only when official status carries duration (still may default resolution).
-		if statusResult.VideoDurationSeconds <= 0 {
-			reqLog.Error("grok_media.video_billing_skipped_missing_pending",
-				zap.String("request_id", taskRequestID),
-				zap.String("reason", "no create-time snapshot and status has no video.duration"),
-			)
-			return nil
-		}
-		reqLog.Error("grok_media.video_billing_without_pending",
-			zap.String("request_id", taskRequestID),
-			zap.Int("status_duration_seconds", statusResult.VideoDurationSeconds),
-			zap.String("note", "resolution falls back to default 480p; investigate pending store failures"),
-		)
+		// A lost snapshot may contain a frozen charge. Never guess from current rates.
+		reqLog.Error("grok_media.video_billing_skipped_missing_pending", zap.String("request_id", taskRequestID))
+		return nil
 	}
 	claimed, err := h.gatewayService.ClaimGrokVideoBilling(ctx, taskRequestID, subject.UserID, apiKey.ID)
 	if err != nil {

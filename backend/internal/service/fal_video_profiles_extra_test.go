@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +41,6 @@ func TestFalVideoExtraProfilesSubmitAndSettle(t *testing.T) {
 		t.Run(tc.endpoint, func(t *testing.T) {
 			ctx := context.Background()
 			s, store, billing, usage, req := falVideoFixture()
-			s.gateway = &GatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{FalVideoProfilesEnabled: true}}}
 			account := s.accounts.(falVideoTestAccounts).account
 			account.Credentials["model_mapping"] = map[string]any{req.Model: tc.endpoint}
 			if strings.Contains(tc.fields, image) {
@@ -57,7 +55,7 @@ func TestFalVideoExtraProfilesSubmitAndSettle(t *testing.T) {
 			require.ErrorIs(t, err, ErrVideoTaskInvalid)
 			require.Empty(t, body)
 			_, err = s.Submit(ctx, req)
-			require.ErrorContains(t, err, "positive video price")
+			require.ErrorIs(t, err, ErrVideoModelPriceMissing)
 			require.Empty(t, store.task.ID)
 			require.Empty(t, billing.reserved)
 
@@ -108,7 +106,7 @@ func TestFalVideoExtraProfilesSubmitAndSettle(t *testing.T) {
 			require.NotEmpty(t, ack.ProfileVersion)
 			require.Equal(t, "video", ack.ResultPath)
 			group.VideoModelBillingRules = domain.VideoModelBillingRules{}
-			s.gateway.cfg.Gateway.FalVideoProfilesEnabled = false
+			group.AllowVideoGeneration = false
 			replay, err := s.Submit(ctx, req)
 			require.NoError(t, err)
 			require.Equal(t, ack.ID, replay.ID)

@@ -32,6 +32,8 @@ func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {
 		c, w := grokMediaSlotContext(context.Background(), method == http.MethodPost)
 		key, _ := middleware.GetAPIKeyFromContext(c)
 		key.Group.Platform = service.PlatformOpenAI
+		key.Group.AllowImageGeneration = true
+		key.Group.AllowVideoGeneration = false // Ark uses the existing permission and token billing.
 		body := ""
 		if method == http.MethodPost {
 			body = `{"model":"doubao-seedance","content":[{"type":"text","text":"waves"}]}`

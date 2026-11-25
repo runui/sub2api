@@ -252,6 +252,7 @@ type CreateGroupInput struct {
 	ModelPricing              []ChannelModelPricing
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration         bool
+	AllowVideoGeneration         bool
 	AllowBatchImageGeneration    bool
 	ImageCountBilling            bool
 	ImageRateIndependent         bool
@@ -338,6 +339,7 @@ type UpdateGroupInput struct {
 	ModelPricing              *[]ChannelModelPricing
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration         *bool
+	AllowVideoGeneration         *bool
 	AllowBatchImageGeneration    *bool
 	ImageCountBilling            *bool
 	ImageRateIndependent         *bool

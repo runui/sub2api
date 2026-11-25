@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -834,6 +833,8 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 	return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
 }
 
+// New native video tasks record a frozen quote. This path preserves pricing for
+// pre-upgrade pending tasks and other video usage without a frozen quote.
 func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	ctx context.Context,
 	billingModel string,
@@ -841,14 +842,6 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	result *OpenAIForwardResult,
 	multiplier float64,
 ) *CostBreakdown {
-	cost, _ := s.calculateOpenAIVideoCostWithRule(ctx, billingModel, apiKey, result, multiplier, domain.VideoModelBillingRule{}, false)
-	return cost
-}
-
-func (s *OpenAIGatewayService) calculateOpenAIVideoCostWithRule(
-	ctx context.Context, billingModel string, apiKey *APIKey, result *OpenAIForwardResult, multiplier float64,
-	rule domain.VideoModelBillingRule, configured bool,
-) (*CostBreakdown, error) {
 	videoCount := result.VideoCount
 	if videoCount <= 0 {
 		videoCount = 1
@@ -865,36 +858,25 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCostWithRule(
 			ReasoningEffort: optionalStringValue(result.ReasoningEffort),
 		})
 		if err == nil {
-			return cost, nil
-		}
-	}
-	if configured {
-		rate, ok := videoRuleRate(rule, resolution, "")
-		if ok {
-			return videoRuleCost(rule.Unit, rate, videoCount, durationSeconds, multiplier), nil
-		}
-		// A legacy partial Grok seconds table used the ordinary seconds fallback.
-		// A generation rule must never borrow a price from a different unit.
-		if rule.Unit != domain.VideoBillingPerSecond {
-			return nil, &GrokMediaInputValidationError{Reason: "configure a video fee for the requested resolution"}
+			return cost
 		}
 	}
 	groupConfig := videoPriceConfigFromAPIKey(apiKey)
 	if !result.UnifiedVideoBilling && apiKeyHasConfiguredVideoPrice(apiKey, billingModel, resolution) {
-		return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier), nil
+		return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier)
 	}
 	if refreshed := s.apiKeyWithFreshGroupMediaPricing(ctx, apiKey); refreshed != apiKey {
 		apiKey = refreshed
 		groupConfig = videoPriceConfigFromAPIKey(apiKey)
 		if !result.UnifiedVideoBilling && apiKeyHasConfiguredVideoPrice(apiKey, billingModel, resolution) {
-			return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier), nil
+			return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier)
 		}
 	}
 	if result.UnifiedVideoBilling && groupConfig != nil {
 		// A removed unified model rule must not revive a legacy per-model rate.
 		groupConfig.ModelPrices = nil
 		if apiKey.Group.GetVideoPrice(resolution) != nil {
-			return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier), nil
+			return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier)
 		}
 	}
 	if resolved != nil && resolved.Source == PricingSourceChannel &&
@@ -920,12 +902,12 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCostWithRule(
 		})
 		if err == nil {
 			cost.BillingMode = string(BillingModeVideo)
-			return cost, nil
+			return cost
 		}
 		logger.LegacyPrintf("service.openai_gateway", "Calculate video channel cost failed: %v", err)
 	}
 
-	return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier), nil
+	return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier)
 }
 
 func (s *OpenAIGatewayService) apiKeyWithFreshGroupMediaPricing(ctx context.Context, apiKey *APIKey) *APIKey {

@@ -200,6 +200,7 @@ type CreateGroupRequest struct {
 	ModelPricing              []service.ChannelModelPricing `json:"model_pricing"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            bool                          `json:"allow_image_generation"`
+	AllowVideoGeneration            bool                          `json:"allow_video_generation"`
 	AllowBatchImageGeneration       bool                          `json:"allow_batch_image_generation"`
 	ImageCountBilling               bool                          `json:"image_count_billing"`
 	ImageRateIndependent            bool                          `json:"image_rate_independent"`
@@ -280,6 +281,7 @@ type UpdateGroupRequest struct {
 	ModelPricing              *[]service.ChannelModelPricing `json:"model_pricing"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            *bool                         `json:"allow_image_generation"`
+	AllowVideoGeneration            *bool                         `json:"allow_video_generation"`
 	AllowBatchImageGeneration       *bool                         `json:"allow_batch_image_generation"`
 	ImageCountBilling               *bool                         `json:"image_count_billing"`
 	ImageRateIndependent            *bool                         `json:"image_rate_independent"`
@@ -693,6 +695,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		LongContextPricingEnabled:       req.LongContextPricingEnabled,
 		ModelPricing:                    req.ModelPricing,
 		AllowImageGeneration:            req.AllowImageGeneration,
+		AllowVideoGeneration:            req.AllowVideoGeneration,
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
 		ImageCountBilling:               req.ImageCountBilling,
 		ImageRateIndependent:            req.ImageRateIndependent,
@@ -844,6 +847,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		LongContextPricingEnabled:       req.LongContextPricingEnabled,
 		ModelPricing:                    req.ModelPricing,
 		AllowImageGeneration:            req.AllowImageGeneration,
+		AllowVideoGeneration:            req.AllowVideoGeneration,
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
 		ImageCountBilling:               req.ImageCountBilling,
 		ImageRateIndependent:            req.ImageRateIndependent,

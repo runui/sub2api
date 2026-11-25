@@ -936,8 +936,12 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 	h := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(cache), billingCache, &service.APIKeyService{}, nil, nil, nil, nil, cfg)
 	apiKey := &service.APIKey{
 		ID: 902, GroupID: &groupID,
-		User:  &service.User{ID: 903, Status: service.StatusActive},
-		Group: &service.Group{ID: groupID, Platform: service.PlatformGrok, Status: service.StatusActive, AllowImageGeneration: true},
+		User: &service.User{ID: 903, Status: service.StatusActive},
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformGrok, Status: service.StatusActive, AllowImageGeneration: true,
+			AllowVideoGeneration: true, RateMultiplier: 1,
+			VideoModelPrices: map[string]map[string]float64{service.VideoPriceFamilyGrokImagineVideo: {"480p": .1}},
+		},
 	}
 	router := gin.New()
 	router.Use(func(c *gin.Context) {

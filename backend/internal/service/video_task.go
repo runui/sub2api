@@ -19,6 +19,8 @@ import (
 
 var (
 	ErrVideoTaskInvalid                = errors.New("invalid video request")
+	ErrVideoGenerationDisabled         = errors.New("video generation is not enabled for this group")
+	ErrVideoModelPriceMissing          = errors.New("configure a matching video price for this model and output spec")
 	ErrVideoTaskNotFound               = errors.New("video request not found")
 	ErrVideoTaskConflict               = errors.New("idempotency key already used for a different request")
 	ErrVideoTaskSubmitting             = errors.New("video submission is still being recorded; check the request status")
