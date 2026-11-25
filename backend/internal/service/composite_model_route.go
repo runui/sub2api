@@ -102,11 +102,16 @@ type CompositeModelRouteRepository interface {
 
 func normalizeCompositeRouteEndpoint(endpoint string) string {
 	endpoint = strings.ToLower(strings.TrimSpace(endpoint))
-	if endpoint == "" {
-		return CompositeRouteEndpointAny
+	if IsCompositeRouteEndpoint(endpoint) {
+		return endpoint
 	}
+	return CompositeRouteEndpointAny
+}
+
+// IsCompositeRouteEndpoint validates explicit admin input without treating typos as 'any'.
+func IsCompositeRouteEndpoint(endpoint string) bool {
 	switch endpoint {
-	case CompositeRouteEndpointMessages,
+	case CompositeRouteEndpointAny, CompositeRouteEndpointMessages,
 		CompositeRouteEndpointCountTokens,
 		CompositeRouteEndpointResponses,
 		CompositeRouteEndpointChatCompletions,
@@ -114,10 +119,18 @@ func normalizeCompositeRouteEndpoint(endpoint string) string {
 		CompositeRouteEndpointImages,
 		CompositeRouteEndpointVideos,
 		CompositeRouteEndpointGemini:
-		return endpoint
+		return true
 	default:
-		return CompositeRouteEndpointAny
+		return false
 	}
+}
+
+// IsCompositeRouteTarget keeps video-only providers out of non-video routes.
+func IsCompositeRouteTarget(endpoint, platform string) bool {
+	if normalizeCompositeRouteEndpoint(endpoint) == CompositeRouteEndpointVideos {
+		return supportsVideoRoutePlatform(platform)
+	}
+	return isConcreteRequestPlatform(platform)
 }
 
 func normalizeCompositeRouteMatchType(matchType string) string {

@@ -10,7 +10,7 @@ vi.mock('@/api/client', () => ({
   apiClient: { get, post }
 }))
 
-import { getById, syncUpstreamModels } from '@/api/admin/accounts'
+import { getById, getModelCatalog, syncUpstreamModels } from '@/api/admin/accounts'
 
 const diagnostics: GrokModelDiagnostics = {
   state: 'fresh',
@@ -62,8 +62,7 @@ describe('admin account grok model diagnostics API', () => {
 
     await expect(syncUpstreamModels(25)).resolves.toEqual(result)
     expect(post).toHaveBeenCalledTimes(1)
-    expect(post).toHaveBeenCalledWith('/admin/accounts/25/models/sync-upstream')
-    expect(post.mock.calls[0]).toHaveLength(1)
+    expect(post).toHaveBeenCalledWith('/admin/accounts/25/models/sync-upstream', undefined, { timeout: 90_000 })
   })
 
   it('leaves omitted diagnostics and discovery source absent for older responses', async () => {
@@ -76,6 +75,14 @@ describe('admin account grok model diagnostics API', () => {
     expect(account).not.toHaveProperty('grok_model_diagnostics')
     expect(synced).not.toHaveProperty('discovery_source')
     expect(synced).not.toHaveProperty('grok_model_diagnostics')
-    expect(post).toHaveBeenLastCalledWith('/admin/accounts/3/models/sync-upstream')
+    expect(post).toHaveBeenLastCalledWith('/admin/accounts/3/models/sync-upstream', undefined, { timeout: 90_000 })
+  })
+
+  it('reads the saved model catalog without starting a sync', async () => {
+    const result = { models: ['fal-ai/veo3.1'], observed_at: '2026-11-25T00:00:00Z' }
+    get.mockResolvedValueOnce({ data: result })
+    await expect(getModelCatalog(25)).resolves.toEqual(result)
+    expect(get).toHaveBeenCalledWith('/admin/accounts/25/models/catalog')
+    expect(post).not.toHaveBeenCalled()
   })
 })

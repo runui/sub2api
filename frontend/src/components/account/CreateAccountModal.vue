@@ -1690,7 +1690,7 @@
             </div>
 
             <!-- Whitelist Mode -->
-            <div v-if="modelRestrictionMode === 'whitelist'">
+            <div v-if="form.platform === 'fal' ? show : modelRestrictionMode === 'whitelist'" v-show="modelRestrictionMode === 'whitelist'">
               <ModelWhitelistSelector
                 v-model="allowedModels"
                 :model-mappings="modelMappings"
@@ -1707,7 +1707,7 @@
             </div>
 
             <!-- Mapping Mode -->
-            <div v-else>
+            <div v-if="modelRestrictionMode === 'mapping'">
               <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
@@ -4690,7 +4690,7 @@ const upstreamGroupSource = computed(() => {
 const syncPreviewCredentials = computed(() => {
   if (form.platform === 'fal') {
     const apiKey = apiKeyValue.value.trim()
-    return apiKey ? { platform: form.platform, type: form.type, api_key: apiKey } : undefined
+    return apiKey ? { platform: form.platform, type: form.type, api_key: apiKey, proxy_id: form.proxy_id ?? undefined } : undefined
   }
   if (!apiKeyValue.value) return undefined
   const modelMapping = buildModelMappingObject(
@@ -5181,7 +5181,7 @@ watch(
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
         .catch(() => { tlsFingerprintProfiles.value = [] })
       // Modal opened - fill related models
-      allowedModels.value = [...getModelsByPlatform(form.platform)]
+      allowedModels.value = form.platform === 'fal' ? [] : [...getModelsByPlatform(form.platform)]
       // Antigravity: 默认使用映射模式并填充默认映射
       if (form.platform === 'antigravity') {
         antigravityModelRestrictionMode.value = 'mapping'
@@ -5382,8 +5382,8 @@ const handleSelectGeminiOAuthType = (oauthType: 'code_assist' | 'google_one' | '
 // Auto-fill related models when switching to whitelist mode or changing platform
 watch(
   [modelRestrictionMode, () => form.platform],
-  ([newMode]) => {
-    if (newMode === 'whitelist') {
+  ([newMode, platform]) => {
+    if (newMode === 'whitelist' && platform !== 'fal') {
       allowedModels.value = [...getModelsByPlatform(form.platform)]
     }
   }
@@ -6058,7 +6058,8 @@ const handleSubmit = async () => {
       appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
       return
     }
-    const mapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    // The tabs edit two parts of the same saved restriction, not alternative payloads.
+    const mapping = buildModelMappingObject('combined', allowedModels.value, modelMappings.value)
     await doCreateAccount({
       name: form.name.trim(),
       notes: form.notes,

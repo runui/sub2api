@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -42,9 +43,11 @@ type syncUpstreamHTTPUpstream struct {
 	resp      *http.Response
 	responses []*http.Response
 	err       error
+	proxyURL  string
 }
 
 func (u *syncUpstreamHTTPUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	u.proxyURL = proxyURL
 	if u.err != nil {
 		return nil, u.err
 	}
@@ -61,10 +64,14 @@ func (u *syncUpstreamHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string,
 }
 
 func setupSyncUpstreamModelsRouter(adminSvc service.AdminService, upstream service.HTTPUpstream) *gin.Engine {
+	return setupModelCatalogRouter(adminSvc, upstream, nil)
+}
+
+func setupModelCatalogRouter(adminSvc service.AdminService, upstream service.HTTPUpstream, repo service.AccountRepository) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	accountTestSvc := service.NewAccountTestService(
-		nil,
+		repo,
 		nil,
 		nil,
 		nil,
@@ -75,8 +82,90 @@ func setupSyncUpstreamModelsRouter(adminSvc service.AdminService, upstream servi
 	)
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, accountTestSvc, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts/:id/models/sync-upstream", handler.SyncUpstreamModels)
+	router.GET("/api/v1/admin/accounts/:id/models/catalog", handler.GetModelCatalog)
 	router.POST("/api/v1/admin/accounts/models/sync-upstream-preview", handler.SyncUpstreamModelsPreview)
 	return router
+}
+
+type modelCatalogAccountRepo struct {
+	service.AccountRepository
+	snapshot     *service.UpstreamModelCatalog
+	discardWrite bool
+}
+
+func (r *modelCatalogAccountRepo) SaveAccountModelCatalogSnapshot(_ context.Context, _ *service.Account, _ string, startedAt time.Time, catalog *service.UpstreamModelCatalog) error {
+	if r.discardWrite {
+		return nil
+	}
+	copy := *catalog
+	copy.ObservedAt = &startedAt
+	r.snapshot = &copy
+	return nil
+}
+
+func (r *modelCatalogAccountRepo) GetAccountModelCatalogSnapshot(context.Context, int64, string) (*service.UpstreamModelCatalog, error) {
+	if r.snapshot == nil {
+		return nil, nil
+	}
+	copy := *r.snapshot
+	return &copy, nil
+}
+
+func TestAccountHandlerFalModelCatalogKeepsCompleteSnapshot(t *testing.T) {
+	const endpoint = "fal-ai/veo3.1"
+	const path = "/api/v1/admin/accounts/44/models"
+	svc := &availableModelsAdminService{stubAdminService: newStubAdminService(), account: service.Account{
+		ID: 44, Platform: service.PlatformFal, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "test", "model_mapping": map[string]string{"alias": endpoint}},
+		Groups:      []*service.Group{{ID: 1, Name: "test", Status: service.StatusActive, AllowImageGeneration: true}},
+	}}
+	upstream := &syncUpstreamHTTPUpstream{resp: &http.Response{StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(`{"models":[{"endpoint_id":"fal-ai/veo3.1","metadata":{"status":"active"}}]}`))}}
+	repo := &modelCatalogAccountRepo{}
+	router := setupModelCatalogRouter(svc, upstream, repo)
+	call := func(method, suffix string, status int) string {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(method, path+suffix, nil))
+		require.Equal(t, status, w.Code, w.Body.String())
+		return w.Body.String()
+	}
+	require.Contains(t, call(http.MethodGet, "/catalog", http.StatusOK), `"models":[]`)
+	first := call(http.MethodPost, "/sync-upstream", http.StatusOK)
+	require.Contains(t, first, `"observed_at"`)
+	require.NotContains(t, first, `"video_setup"`)
+	upstream.resp = &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader(`{}`))}
+	call(http.MethodPost, "/sync-upstream", http.StatusBadGateway)
+	saved := call(http.MethodGet, "/catalog", http.StatusOK)
+	require.Contains(t, saved, `"models":["fal-ai/veo3.1"]`)
+	require.Equal(t, first, saved)
+
+	// A connection change can discard a successful traversal at write time.
+	// The handler must not report that traversal as a new saved observation.
+	previous := time.Now().Add(-time.Minute)
+	repo.snapshot.ObservedAt = &previous
+	repo.discardWrite = true
+	upstream.resp = &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"models":[{"endpoint_id":"fal-ai/veo3.1/fast","metadata":{"status":"active"}}]}`))}
+	call(http.MethodPost, "/sync-upstream", http.StatusConflict)
+	require.Equal(t, []string{endpoint}, repo.snapshot.Models)
+}
+
+func TestAccountHandlerFalPreviewUsesSelectedProxyWithoutWritingSnapshot(t *testing.T) {
+	proxy := service.Proxy{ID: 27, Protocol: "http", Host: "fal-proxy.example", Port: 8080}
+	admin := newStubAdminService()
+	admin.proxies = []service.Proxy{proxy}
+	upstream := &syncUpstreamHTTPUpstream{resp: &http.Response{StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(`{"models":[{"endpoint_id":"fal-ai/veo3.1","metadata":{"status":"active"}}]}`))}}
+	repo := &modelCatalogAccountRepo{}
+	router := setupModelCatalogRouter(admin, upstream, repo)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/models/sync-upstream-preview",
+		strings.NewReader(`{"platform":"fal","type":"apikey","api_key":"test","proxy_id":27}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"models":["fal-ai/veo3.1"]`)
+	require.Equal(t, proxy.URL(), upstream.proxyURL)
+	require.Nil(t, repo.snapshot)
 }
 
 func TestAccountHandlerGetAvailableModels_GrokUsesXAIModels(t *testing.T) {

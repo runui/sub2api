@@ -13,6 +13,7 @@ const {
   showInfo,
   showWarning,
   syncUpstreamModels,
+  getModelCatalog,
   syncUpstreamModelsPreview
 } = vi.hoisted(() => ({
   copyToClipboard: vi.fn().mockResolvedValue(true),
@@ -21,6 +22,7 @@ const {
   showInfo: vi.fn(),
   showWarning: vi.fn(),
   syncUpstreamModels: vi.fn(),
+  getModelCatalog: vi.fn(),
   syncUpstreamModelsPreview: vi.fn()
 }))
 
@@ -46,6 +48,7 @@ vi.mock('@/stores/app', () => ({
 vi.mock('@/api/admin/accounts', () => ({
   accountsAPI: {
     syncUpstreamModels,
+    getModelCatalog,
     syncUpstreamModelsPreview
   }
 }))
@@ -100,6 +103,18 @@ function findModelRow(wrapper: ReturnType<typeof mountSelector>, modelId: string
 }
 
 describe('ModelWhitelistSelector', () => {
+  it('ignores a saved fal catalog response after switching accounts', async () => {
+    const previous = deferred<{ models: string[] }>()
+    getModelCatalog.mockReset().mockReturnValueOnce(previous.promise).mockResolvedValueOnce({ models: ['fal-ai/veo3.1'] })
+    const wrapper = mountSelector({ platform: 'fal', accountId: 1 })
+    await wrapper.setProps({ accountId: 2 })
+    await flushPromises()
+    previous.resolve({ models: ['stale-model'] })
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="select-model"]').map(button => button.attributes('data-model-id'))).toEqual(['fal-ai/veo3.1'])
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
   beforeEach(() => {
     copyToClipboard.mockClear()
     showError.mockReset()
@@ -225,7 +240,7 @@ describe('ModelWhitelistSelector', () => {
 
   it('copies a model ID without selecting the model', async () => {
     const wrapper = mountSelector()
-    await wrapper.get('div.cursor-pointer').trigger('click')
+    await wrapper.get('[data-testid="toggle-model-dropdown"]').trigger('click')
 
     const row = findModelRow(wrapper, 'gpt-5.6-sol')
 
@@ -241,7 +256,7 @@ describe('ModelWhitelistSelector', () => {
 
   it('keeps the existing model selection behavior', async () => {
     const wrapper = mountSelector()
-    await wrapper.get('div.cursor-pointer').trigger('click')
+    await wrapper.get('[data-testid="toggle-model-dropdown"]').trigger('click')
 
     const row = findModelRow(wrapper, 'gpt-5.6-sol')
     await row.get('[data-testid="select-model"]').trigger('click')

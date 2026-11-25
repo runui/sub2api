@@ -7,11 +7,12 @@ import {
   setPlatformCatalog
 } from '@/constants/platformCatalog'
 
-const { updateAccountMock, checkMixedChannelRiskMock, previewUpstreamGroup, syncUpstreamModelsMock, authIsSimpleMode } = vi.hoisted(() => ({
+const { updateAccountMock, checkMixedChannelRiskMock, previewUpstreamGroup, syncUpstreamModelsMock, getModelCatalogMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   previewUpstreamGroup: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   syncUpstreamModelsMock: vi.fn(),
+  getModelCatalogMock: vi.fn().mockResolvedValue({ models: [] }),
   authIsSimpleMode: { value: true }
 }))
 
@@ -50,7 +51,7 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn(),
-  accountsAPI: { syncUpstreamModels: syncUpstreamModelsMock }
+  accountsAPI: { syncUpstreamModels: syncUpstreamModelsMock, getModelCatalog: getModelCatalogMock }
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -374,23 +375,43 @@ describe('EditAccountModal', () => {
     wrapper.unmount()
   })
 
-  it('syncs fal via the shared whitelist without replacing an existing alias', async () => {
-    const model = 'xai/grok-imagine-video/v1.5'
+  it('loads the saved dropdown, retains it on sync failure, and saves selections without changing aliases', async () => {
+    const imagine = 'xai/grok-imagine-video/v1.5'
+    const veo = 'fal-ai/veo3.1'
     const account = {
-      ...buildAccount(), platform: 'fal', credentials: { model_mapping: { 'video-public': model } },
+      ...buildAccount(), platform: 'fal', credentials: { model_mapping: { [imagine]: veo, legacy: 'unsupported', unsupported: 'unsupported' } },
       credentials_status: { has_api_key: true }
     }
-    syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [model] })
+    const catalog = {
+      models: [imagine, veo], observed_at: '2026-11-25T00:00:00Z',
+      capabilities: [{ id: imagine, ready: true }, { id: veo, ready: true, requires_price: true }, { id: 'unsupported', ready: false }]
+    }
+    getModelCatalogMock.mockResolvedValueOnce(catalog)
+    syncUpstreamModelsMock.mockReset().mockRejectedValueOnce(new Error('rate-limited')).mockResolvedValueOnce(catalog)
     updateAccountMock.mockClear().mockResolvedValue(account)
     const wrapper = mountModal(account, false, true)
-    expect(wrapper.get('[placeholder="admin.accounts.requestModel"]').element).toHaveProperty('value', 'video-public')
-    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.modelWhitelist')!.trigger('click')
+    await flushPromises()
+    expect(getModelCatalogMock).toHaveBeenCalledWith(account.id)
+    const mode = (key: string) => wrapper.findAll('button').find(button => button.text() === `admin.accounts.${key}`)!
+    const options = () => wrapper.findAll('[data-testid="select-model"]')
+    await mode('modelWhitelist').trigger('click')
+    expect(options().map(button => button.attributes('data-model-id'))).toEqual([veo, imagine, 'unsupported'])
+    expect((options()[2].element as HTMLButtonElement).disabled).toBe(true)
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+    expect(options()).toHaveLength(3)
     await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
     await flushPromises()
     expect(syncUpstreamModelsMock).toHaveBeenCalledWith(account.id)
+    await options()[1].trigger('click') // This request name already maps to Veo.
+    expect(options()[1].attributes('aria-pressed')).toBe('false')
+    await options()[0].trigger('click')
+    await mode('modelMapping').trigger('click')
     await wrapper.get('#edit-account-form').trigger('submit.prevent')
     await flushPromises()
-    expect(updateAccountMock.mock.calls[0][1].credentials).toEqual({ model_mapping: { [model]: model, 'video-public': model } })
+    expect(updateAccountMock.mock.calls[0][1].credentials).toEqual({
+      model_mapping: { [veo]: veo, [imagine]: veo, legacy: 'unsupported', unsupported: 'unsupported' }
+    })
     wrapper.unmount()
   })
 

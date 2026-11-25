@@ -53,6 +53,7 @@ type UpstreamModelMetadataSnapshot struct {
 }
 
 type UpstreamModelCatalog struct {
+	ObservedAt           *time.Time                       `json:"observed_at,omitempty"`
 	Capabilities         []UpstreamModelCapability        `json:"capabilities,omitempty"`
 	Models               []string                         `json:"models"`
 	Metadata             map[string]UpstreamModelMetadata `json:"metadata,omitempty"`
@@ -80,6 +81,10 @@ type AccountModelCatalogSnapshotRepository interface {
 	SaveAccountModelCatalogSnapshot(context.Context, *Account, string, time.Time, *UpstreamModelCatalog) error
 }
 
+type accountModelCatalogSnapshotReader interface {
+	GetAccountModelCatalogSnapshot(context.Context, int64, string) (*UpstreamModelCatalog, error)
+}
+
 func (s *AccountTestService) syncAccountModelCatalog(ctx context.Context, account *Account, source string, discover func(context.Context, *Account) (*UpstreamModelCatalog, error)) (*UpstreamModelCatalog, error) {
 	startedAt := time.Now().UTC()
 	catalog, err := discover(ctx, account)
@@ -91,6 +96,7 @@ func (s *AccountTestService) syncAccountModelCatalog(ctx context.Context, accoun
 			return nil, newUpstreamModelSyncInternalError("Failed to save upstream model catalog", err)
 		}
 	}
+	catalog.ObservedAt = &startedAt
 	return catalog, nil
 }
 
@@ -258,7 +264,7 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 // untouched.
 func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, account *Account) (*UpstreamModelCatalog, error) {
 	if account != nil && account.Platform == PlatformFal {
-		return s.syncAccountModelCatalog(ctx, account, "fal_platform_api", s.discoverFalModelCatalog)
+		return s.syncAccountModelCatalog(ctx, account, falCatalogSource, s.discoverFalModelCatalog)
 	}
 	fetched, err := s.fetchUpstreamModelListWithObservation(ctx, account)
 	var (

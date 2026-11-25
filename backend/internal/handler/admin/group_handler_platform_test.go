@@ -86,3 +86,20 @@ func TestCompositeRouteTargetPlatform_RejectsComposite(t *testing.T) {
 	var req CompositeRouteRequest
 	require.Error(t, bindGroupPlatformJSON(t, &req, `{"public_model":"m","target_platform":"composite"}`))
 }
+
+func TestCompositeRouteBindingAcceptsVideosAndRejectsUnknownEndpoints(t *testing.T) {
+	for _, endpoint := range []string{"videos", "vidoes"} {
+		body := fmt.Sprintf(`{"public_model":"alias","model":"alias","target_platform":"fal","endpoint":%q}`, endpoint)
+		for _, req := range []any{&CompositeRouteRequest{}, &CompositeRoutePreviewRequest{}} {
+			err := bindGroupPlatformJSON(t, req, body)
+			if endpoint == "videos" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		}
+	}
+	var req CompositeRouteRequest
+	require.Error(t, bindGroupPlatformJSON(t, &req, `{"public_model":"alias","target_platform":"fal","endpoint":"images"}`))
+	require.Error(t, bindGroupPlatformJSON(t, &req, `{"public_model":"alias","target_platform":"openai","endpoint":"videos"}`))
+}

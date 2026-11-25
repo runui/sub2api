@@ -610,6 +610,7 @@ export async function getAvailableModels(id: number): Promise<ClaudeModel[]> {
 
 export interface SyncUpstreamModelsResult {
   models: string[]
+  observed_at?: string
   capabilities?: UpstreamModelCapability[]
   metadata?: Record<string, UpstreamModelMetadata>
   warnings?: UpstreamModelSyncWarning[]
@@ -658,11 +659,17 @@ export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModels
   return data
 }
 
+export async function getModelCatalog(id: number): Promise<SyncUpstreamModelsResult> {
+  const { data } = await apiClient.get<SyncUpstreamModelsResult>(`/admin/accounts/${id}/models/catalog`)
+  return data
+}
+
 export interface SyncUpstreamPreviewParams {
   platform: string
   type: string
   base_url?: string
   api_key: string
+  proxy_id?: number
   model_mapping?: Record<string, string>
 }
 
@@ -1195,6 +1202,7 @@ export const accountsAPI = {
   setSchedulable,
   getAvailableModels,
   syncUpstreamModels,
+  getModelCatalog,
   syncUpstreamModelsPreview,
   generateAuthUrl,
   exchangeCode,

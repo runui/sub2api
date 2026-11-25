@@ -258,10 +258,10 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 	if input.PublicModel == "" {
 		return nil, fmt.Errorf("public_model is required")
 	}
-	if input.Endpoint == CompositeRouteEndpointVideos && !supportsVideoRoutePlatform(input.TargetPlatform) {
-		return nil, fmt.Errorf("target_platform does not support video generation")
-	}
-	if input.Endpoint != CompositeRouteEndpointVideos && !isConcreteRequestPlatform(input.TargetPlatform) {
+	if !IsCompositeRouteTarget(input.Endpoint, input.TargetPlatform) {
+		if input.Endpoint == CompositeRouteEndpointVideos {
+			return nil, fmt.Errorf("target_platform does not support video generation")
+		}
 		return nil, fmt.Errorf("target_platform must be a concrete provider")
 	}
 	if input.Priority == 0 {

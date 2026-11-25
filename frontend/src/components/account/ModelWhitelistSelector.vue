@@ -2,10 +2,7 @@
   <div>
     <!-- Multi-select Dropdown -->
     <div class="relative mb-3">
-      <div
-        @click="toggleDropdown"
-        class="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-dark-500 dark:bg-dark-700"
-      >
+      <div class="rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-dark-500 dark:bg-dark-700">
         <div class="grid grid-cols-2 gap-1.5">
           <span
             v-for="model in modelValue"
@@ -19,23 +16,25 @@
             <button
               type="button"
               @click.stop="removeModel(model)"
+              :aria-label="`${t('common.remove')} ${model}`"
               class="shrink-0 rounded-full hover:bg-gray-200 dark:hover:bg-dark-500"
             >
               <Icon name="x" size="xs" class="h-3.5 w-3.5" :stroke-width="2" />
             </button>
           </span>
         </div>
-        <div class="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 dark:border-dark-600">
+        <button type="button" data-testid="toggle-model-dropdown" :aria-expanded="showDropdown" class="mt-2 flex w-full items-center justify-between border-t border-gray-200 pt-2 dark:border-dark-600" @click="toggleDropdown">
           <span class="text-xs text-gray-400">{{ t('admin.accounts.modelCount', { count: modelValue.length }) }}</span>
           <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
           </svg>
-        </div>
+        </button>
       </div>
       <!-- Dropdown List -->
       <div
         v-if="showDropdown"
-        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-700"
+        class="left-0 right-0 top-full z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-700"
+        :class="{ absolute: !manualCatalog }"
       >
         <div class="sticky top-0 border-b border-gray-200 bg-white p-2 dark:border-dark-600 dark:bg-dark-700">
           <input
@@ -43,6 +42,7 @@
             type="text"
             class="input w-full text-sm"
             :placeholder="t('admin.accounts.searchModels')"
+            @keydown.enter.prevent
             @click.stop
           />
         </div>
@@ -56,7 +56,10 @@
             <button
               type="button"
               data-testid="select-model"
-              class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm"
+              :data-model-id="model.value"
+              class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="Boolean(model.disabledReason)"
+              :aria-pressed="modelValue.includes(model.value)"
               @click="toggleModel(model.value)"
             >
               <span
@@ -72,7 +75,10 @@
                 </svg>
               </span>
               <ModelIcon :model="model.value" size="18px" />
-              <span class="truncate text-gray-900 dark:text-white">{{ model.value }}</span>
+              <span class="min-w-0">
+                <span class="block truncate text-gray-900 dark:text-white">{{ model.value }}</span>
+                <span v-if="model.disabledReason" class="block text-xs text-gray-500">{{ t(`admin.accounts.catalogModelReasons.${model.disabledReason}`) }}</span>
+              </span>
             </button>
             <button
               type="button"
@@ -95,6 +101,7 @@
     <!-- Quick Actions -->
     <div class="mb-4 flex flex-wrap gap-2">
       <button
+        v-if="!manualCatalog"
         type="button"
         @click="fillRelated"
         class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
@@ -120,7 +127,9 @@
       </button>
     </div>
 
-    <details v-if="discoveredCapabilities.length" class="mb-3 rounded border border-gray-200 p-2 text-xs dark:border-dark-600">
+    <p v-if="observedAt" class="mb-3 text-xs text-gray-500">{{ t('admin.accounts.catalogObservedAt', { time: new Date(observedAt).toLocaleString() }) }}</p>
+
+    <details v-if="!manualCatalog && discoveredCapabilities.length" class="mb-3 rounded border border-gray-200 p-2 text-xs dark:border-dark-600">
       <summary class="cursor-pointer">{{ t('admin.accounts.discoveredModelCatalog', { count: discoveredCapabilities.length }) }}</summary>
       <div class="mt-2 flex flex-wrap gap-2">
         <input v-model="catalogQuery" class="input flex-1" :placeholder="t('admin.accounts.searchModels')" :aria-label="t('admin.accounts.searchModels')" />
@@ -170,7 +179,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
-import type { SyncUpstreamPreviewParams, UpstreamModelCapability } from '@/api/admin/accounts'
+import type { SyncUpstreamModelsResult, SyncUpstreamPreviewParams, UpstreamModelCapability } from '@/api/admin/accounts'
 import { useClipboard } from '@/composables/useClipboard'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -186,12 +195,7 @@ const props = withDefaults(defineProps<{
   platform?: string
   platforms?: string[]
   accountId?: number
-  syncCredentials?: {
-    platform: string
-    type: string
-    base_url?: string
-    api_key: string
-  }
+  syncCredentials?: SyncUpstreamPreviewParams
   showSyncButton?: boolean
 }>(), { showSyncButton: true })
 
@@ -210,6 +214,12 @@ const customModel = ref('')
 const isComposing = ref(false)
 const isSyncingUpstream = ref(false)
 const discoveredCapabilities = ref<UpstreamModelCapability[]>([])
+const discoveredModels = ref<string[]>([])
+const observedAt = ref<string>()
+const manualCatalog = computed(() => props.platform === 'fal')
+const disabledModels = computed(() => new Map(manualCatalog.value
+  ? discoveredCapabilities.value.filter(entry => !entry.ready).map(entry => [entry.id, entry.reason || 'not_adapted'])
+  : []))
 const catalogQuery = ref('')
 const catalogOperation = ref('')
 const catalogOperations = computed(() => Array.from(new Set(discoveredCapabilities.value.flatMap(entry => entry.operations ?? []))).sort())
@@ -227,15 +237,40 @@ function addDiscoveredModel(model: string) {
 }
 let upstreamSyncVersion = 0
 
+function applyCatalog(result: SyncUpstreamModelsResult) {
+  discoveredCapabilities.value = result.capabilities ?? []
+  discoveredModels.value = result.models
+  observedAt.value = result.observed_at
+  if (discoveredModels.value.length || discoveredCapabilities.value.length) showDropdown.value = true
+}
+
 watch(
-  [() => props.accountId, () => props.platform],
-  () => {
-    upstreamSyncVersion += 1
+  [() => props.accountId, () => props.platform, () => manualCatalog.value && !props.accountId ? props.syncCredentials : undefined],
+  async () => {
+    const version = ++upstreamSyncVersion
     isSyncingUpstream.value = false
     discoveredCapabilities.value = []
+    discoveredModels.value = []
+    observedAt.value = undefined
     catalogQuery.value = ''
     catalogOperation.value = ''
-  }
+    if (!manualCatalog.value) return
+    showDropdown.value = false
+    searchQuery.value = ''
+    if (!props.accountId) return
+    isSyncingUpstream.value = true
+    try {
+      const result = await accountsAPI.getModelCatalog(props.accountId)
+      if (version === upstreamSyncVersion) applyCatalog(result)
+    } catch (error) {
+      if (version === upstreamSyncVersion) appStore.showError(t('admin.accounts.catalogReadError', {
+        message: extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
+      }))
+    } finally {
+      if (version === upstreamSyncVersion) isSyncingUpstream.value = false
+    }
+  },
+  { immediate: true }
 )
 
 onUnmounted(() => {
@@ -270,7 +305,13 @@ const canSyncUpstream = computed(() => {
   return false
 })
 
-const availableOptions = computed(() => {
+const availableOptions = computed<{ value: string; label: string; disabledReason?: string }[]>(() => {
+  if (manualCatalog.value) {
+    // Discovery determines what is selectable, never what is saved.
+    const ids = new Set([...discoveredModels.value, ...discoveredCapabilities.value.map(entry => entry.id)])
+    return [...ids].map(id => ({ value: id, label: id, disabledReason: disabledModels.value.get(id) }))
+      .sort((a, b) => Number(Boolean(a.disabledReason)) - Number(Boolean(b.disabledReason)) || a.value.localeCompare(b.value))
+  }
   if (normalizedPlatforms.value.length === 0) {
     return allModels
   }
@@ -303,15 +344,24 @@ const removeModel = (model: string) => {
 }
 
 const toggleModel = (model: string) => {
+  if (manualCatalog.value && disabledModels.value.has(model)) return
   if (props.modelValue.includes(model)) {
     removeModel(model)
   } else {
+    if (manualCatalog.value && hasMappingConflict(model)) return
     emit('update:modelValue', [...props.modelValue, model])
   }
 }
 
 const copyModelId = async (model: string) => {
   await copyToClipboard(model)
+}
+
+const hasMappingConflict = (model: string) => {
+  const conflict = props.modelMappings?.find(mapping => mapping.from.trim() === model && mapping.to.trim() && mapping.to.trim() !== model)
+  if (!conflict) return false
+  appStore.showInfo(t('admin.accounts.modelMappingConflict', { from: model, to: conflict.to.trim() }))
+  return true
 }
 
 const addCustom = () => {
@@ -325,11 +375,12 @@ const addCustom = () => {
     appStore.showInfo(t('admin.accounts.modelExists'))
     return
   }
-  const conflict = props.modelMappings?.find(mapping => mapping.from.trim() === model && mapping.to.trim() && mapping.to.trim() !== model)
-  if (conflict) {
-    appStore.showInfo(t('admin.accounts.modelMappingConflict', { from: model, to: conflict.to.trim() }))
+  const reason = disabledModels.value.get(model)
+  if (reason) {
+    appStore.showInfo(t(`admin.accounts.catalogModelReasons.${reason}`))
     return
   }
+  if (hasMappingConflict(model)) return
   emit('update:modelValue', [...props.modelValue, model])
   customModel.value = ''
 }
@@ -363,7 +414,7 @@ const syncUpstreamModels = async () => {
     if (accountId) {
       result = await accountsAPI.syncUpstreamModels(accountId)
     } else if (previewCredentials) {
-      result = await accountsAPI.syncUpstreamModelsPreview(previewCredentials as SyncUpstreamPreviewParams)
+      result = await accountsAPI.syncUpstreamModelsPreview(previewCredentials)
     } else {
       return
     }
@@ -371,6 +422,12 @@ const syncUpstreamModels = async () => {
 
     if (result.discovery_source === 'configured_fallback') {
       appStore.showWarning(t('admin.accounts.grokModelDiagnostics.configuredFallback'))
+      return
+    }
+
+    if (manualCatalog.value) {
+      applyCatalog(result)
+      appStore.showInfo(t(result.models.length ? 'admin.accounts.catalogModelReview' : 'admin.accounts.syncUpstreamModelsEmpty'))
       return
     }
 

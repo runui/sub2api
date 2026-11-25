@@ -4,7 +4,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -19,7 +18,7 @@ func TestAccountModelCatalogSnapshotScopeAndRecency(t *testing.T) {
 		Name: "fal catalog snapshot", Platform: service.PlatformFal, Type: service.AccountTypeAPIKey,
 		Credentials: map[string]any{"api_key": "catalog-test-key", "model_mapping": map[string]string{"alias": "legacy"}},
 	})
-	repo := NewAccountRepository(client, integrationDB, nil).(service.AccountModelCatalogSnapshotRepository)
+	repo := NewAccountRepository(client, integrationDB, nil).(*accountRepository)
 	const source = "fal_platform_api"
 	const otherSource = "secondary_feed"
 	now := time.Now().UTC()
@@ -37,12 +36,15 @@ func TestAccountModelCatalogSnapshotScopeAndRecency(t *testing.T) {
 	})
 	require.NoError(t, repo.SaveAccountModelCatalogSnapshot(ctx, otherAccount, otherSource, now, obs("grok")))
 	readModels := func(accountID int64, source string) []string {
-		var raw []byte
-		require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT catalog FROM account_model_catalogs WHERE account_id = $1 AND source = $2`, accountID, source).Scan(&raw))
-		var got service.UpstreamModelCatalog
-		require.NoError(t, json.Unmarshal(raw, &got))
+		got, err := repo.GetAccountModelCatalogSnapshot(ctx, accountID, source)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		require.WithinDuration(t, now, *got.ObservedAt, time.Microsecond)
 		return got.Models
 	}
+	missing, err := repo.GetAccountModelCatalogSnapshot(ctx, account.ID, "missing")
+	require.NoError(t, err)
+	require.Nil(t, missing)
 	require.Equal(t, []string{"complete"}, readModels(account.ID, source))
 	require.Equal(t, []string{"other"}, readModels(account.ID, otherSource))
 	require.Equal(t, []string{"grok"}, readModels(otherAccount.ID, otherSource))

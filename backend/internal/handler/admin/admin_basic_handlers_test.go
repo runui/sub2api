@@ -165,6 +165,28 @@ func TestUserHandlerBindAuthIdentityMapsRequest(t *testing.T) {
 	require.Equal(t, float64(12), adminSvc.boundAuthIdentity.Metadata["report_id"])
 }
 
+func TestCompositeVideoRouteAdminEndpoints(t *testing.T) {
+	router, svc := setupAdminRouter()
+	const base = "/api/v1/admin/groups/2/composite-routes"
+	const route = `{"public_model":"video-test","target_platform":"fal","upstream_model":"video-test","endpoint":"videos"}`
+	for _, tc := range []struct {
+		method, path, body string
+		status             int
+	}{
+		{http.MethodPost, base, route, http.StatusCreated},
+		{http.MethodPut, base + "/1", route, http.StatusOK},
+		{http.MethodPost, base + "/preview", `{"model":"video-test","endpoint":"videos"}`, http.StatusOK},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, tc.status, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), `"endpoint":"videos"`)
+	}
+	require.Equal(t, 3, svc.advancedGroupOperationCalls)
+}
+
 func TestGroupHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 

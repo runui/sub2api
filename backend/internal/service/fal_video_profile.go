@@ -32,6 +32,8 @@ type falVideoProfile struct {
 	ResultPath                    []string
 }
 
+var falImagineVideoResolutions = []string{"480p", "720p", "1080p"}
+
 // Profiles are reviewed contracts, not inferred from endpoint names. Another
 // endpoint can reuse a profile only after its schema and billing are verified.
 var falVideoProfiles = func() map[string]falVideoProfile {

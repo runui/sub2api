@@ -3058,6 +3058,30 @@ func antigravityAccountTestModels(rawMapping any) []antigravity.ClaudeModel {
 	return models
 }
 
+// GetModelCatalog reads the last complete observation without contacting the upstream.
+func (h *AccountHandler) GetModelCatalog(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.NotFound(c, "Account not found")
+		return
+	}
+	if h.accountTestService == nil {
+		response.InternalError(c, "Account test service is not configured")
+		return
+	}
+	catalog, err := h.accountTestService.GetAccountModelCatalog(c.Request.Context(), account)
+	if err != nil {
+		response.InternalError(c, "Failed to read upstream model catalog")
+		return
+	}
+	response.Success(c, catalog)
+}
+
 // SyncUpstreamModels handles syncing live supported models from an account's upstream.
 // POST /api/v1/admin/accounts/:id/models/sync-upstream
 func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
@@ -3103,6 +3127,27 @@ func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
 			catalog.GrokModelDiagnostics = h.accountTestService.GetGrokModelDiagnostics(c.Request.Context(), latest)
 		}
 	}
+	if account.Platform == service.PlatformFal {
+		syncStartedAt := catalog.ObservedAt
+		// Return the durable observation rather than a traversal that may have
+		// lost a race with an account update or a newer sync.
+		latest, readErr := h.adminService.GetAccount(c.Request.Context(), accountID)
+		if readErr != nil {
+			response.InternalError(c, "Failed to read synced upstream model catalog")
+			return
+		}
+		catalog, err = h.accountTestService.GetAccountModelCatalog(c.Request.Context(), latest)
+		if err != nil {
+			response.InternalError(c, "Failed to read synced upstream model catalog")
+			return
+		}
+		// PostgreSQL stores microsecond timestamps. An older row means the
+		// connection changed and the snapshot write was intentionally skipped.
+		if catalog.ObservedAt == nil || (syncStartedAt != nil && catalog.ObservedAt.Add(time.Microsecond).Before(*syncStartedAt)) {
+			response.Error(c, http.StatusConflict, "Account connection changed during sync; retry using the saved settings")
+			return
+		}
+	}
 
 	response.Success(c, catalog)
 }
@@ -3116,6 +3161,7 @@ func (h *AccountHandler) SyncUpstreamModelsPreview(c *gin.Context) {
 		BaseURL      string            `json:"base_url"`
 		APIKey       string            `json:"api_key" binding:"required"`
 		ModelMapping map[string]string `json:"model_mapping"`
+		ProxyID      *int64            `json:"proxy_id" binding:"omitempty,gt=0"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -3134,6 +3180,18 @@ func (h *AccountHandler) SyncUpstreamModelsPreview(c *gin.Context) {
 			"base_url":      req.BaseURL,
 			"model_mapping": modelMapping,
 		},
+	}
+	if req.Platform == service.PlatformFal && req.ProxyID != nil {
+		proxy, err := h.adminService.GetProxy(c.Request.Context(), *req.ProxyID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		if proxy == nil {
+			response.NotFound(c, "Proxy not found")
+			return
+		}
+		tempAccount.ProxyID, tempAccount.Proxy = req.ProxyID, proxy
 	}
 
 	if h.accountTestService == nil {

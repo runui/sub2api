@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -103,9 +104,7 @@ func falVideoInput(req VideoTaskRequest) (falvideo.Input, error) {
 	if input.Resolution == "" {
 		input.Resolution = "720p"
 	}
-	switch input.Resolution {
-	case "480p", "720p", "1080p":
-	default:
+	if !slices.Contains(falImagineVideoResolutions, input.Resolution) {
 		return input, fmt.Errorf("%w: unsupported resolution", ErrVideoTaskInvalid)
 	}
 	if input.ImageURL != "" {
@@ -241,7 +240,7 @@ func (s *FalVideoService) selectAccount(ctx context.Context, req VideoTaskReques
 			invalid = err
 			continue
 		}
-		if price := falVideoEndpointPrice(req.APIKey.Group, profile, input.Resolution); price == nil || *price <= 0 || math.IsNaN(*price) || math.IsInf(*price, 0) {
+		if price := falVideoEndpointPrice(req.APIKey.Group, profile, input.Resolution); price == nil || !(*price > 0) || math.IsInf(*price, 0) {
 			invalid = fmt.Errorf("%w: configure a positive video price for this model and resolution", ErrVideoTaskInvalid)
 			continue
 		}

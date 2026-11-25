@@ -374,6 +374,7 @@
             />
 
             <ModelWhitelistSelector
+              v-if="show || account.platform !== 'fal'"
               ref="grokApiKeyWhitelistRef"
               v-show="modelRestrictionMode === 'whitelist'"
               v-model="allowedModels"
