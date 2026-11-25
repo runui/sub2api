@@ -40,22 +40,9 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <div v-if="account.platform === 'fal' && account.type === 'apikey'">
-        <label for="edit-fal-api-key" class="input-label">{{ t('admin.accounts.apiKey') }}</label>
-        <input id="edit-fal-api-key" v-model="editApiKey" type="password" autocomplete="new-password" class="input font-mono" />
-        <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-        <p class="input-hint">{{ t('admin.accounts.falRouteHint') }}</p>
-        <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="mt-2 flex items-center gap-2">
-          <input v-model="mapping.from" :aria-label="t('admin.accounts.requestModel')" :placeholder="t('admin.accounts.requestModel')" class="input min-w-0" />
-          <input v-model="mapping.to" :aria-label="t('admin.accounts.actualModel')" placeholder="xai/grok-imagine-video/v1.5" class="input min-w-0" />
-          <button type="button" class="btn btn-secondary" @click="removeModelMapping(index)">{{ t('common.remove') }}</button>
-        </div>
-        <button type="button" class="btn btn-secondary mt-2" @click="addModelMapping">{{ t('admin.accounts.addMapping') }}</button>
-      </div>
-
-      <!-- API Key fields (fal has its own fields) -->
-      <div v-else-if="account.type === 'apikey'" class="space-y-4">
-        <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
+      <!-- API Key fields -->
+      <div v-if="account.type === 'apikey'" class="space-y-4">
+        <div v-if="account.platform !== 'fal' && (!isCNApiKeyAccount || editApiProtocol !== 'adaptive')">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="editBaseUrl"
@@ -89,7 +76,7 @@
             @select="onCnPresetSelect"
           />
         </div>
-        <div v-else>
+        <div v-else-if="account.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
           <div class="mt-2 space-y-3">
             <div v-for="item in editAdaptiveProtocolOptions" :key="item.value">
@@ -253,8 +240,9 @@
           <p class="input-hint mt-2">{{ t('admin.accounts.cnProviders.zhipuTeam.hint') }}</p>
         </div>
         <div>
-          <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
+          <label :for="account.platform === 'fal' ? 'edit-fal-api-key' : undefined" class="input-label">{{ t('admin.accounts.apiKey') }}</label>
           <input
+            :id="account.platform === 'fal' ? 'edit-fal-api-key' : undefined"
             v-model="editApiKey"
             type="password"
             class="input font-mono"
@@ -263,7 +251,7 @@
             data-lpignore="true"
             data-bwignore="true"
             :placeholder="
-              account.platform === 'openai'
+              account.platform === 'fal' ? undefined : account.platform === 'openai'
                 ? 'sk-proj-...'
                 : account.platform === 'gemini'
                   ? 'AQ.Ab...'
@@ -284,6 +272,7 @@
           :data-testid="account.platform === 'grok' ? 'grok-model-settings' : undefined"
         >
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
+          <p v-if="account.platform === 'fal'" class="input-hint mb-3">{{ t('admin.accounts.falRouteHint') }}</p>
 
           <div
             v-if="isOpenAIModelRestrictionDisabled"
@@ -399,7 +388,7 @@
             <div v-if="modelRestrictionMode === 'whitelist'">
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-                <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
+                <span v-if="account.platform !== 'fal' && allowedModels.length === 0 && modelMappings.length === 0">{{
                   t('admin.accounts.supportsAllModels')
                 }}</span>
               </p>
@@ -543,7 +532,7 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="account.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
@@ -649,7 +638,7 @@
         </div>
 
         <!-- Custom Error Codes Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="account.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
@@ -5758,7 +5747,7 @@ const handleSubmit = async () => {
         appStore.showError(t('admin.accounts.apiKeyIsRequired'))
         return
       }
-      const mapping = buildModelMappingObject('mapping', [], modelMappings.value) ?? {}
+      const mapping = buildModelRestrictionMapping() ?? {}
       if (apiKey || Object.keys(mapping).length > 0 || credentials.model_mapping) {
         updatePayload.credentials = { ...credentials, ...(apiKey ? { api_key: apiKey } : {}), model_mapping: mapping }
       }

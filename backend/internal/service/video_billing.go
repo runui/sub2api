@@ -1,12 +1,23 @@
 package service
 
 import (
+	"errors"
 	"log/slog"
 	"sort"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
+
+var ErrVideoTaskKeyLimit = errors.New("API key spending limit would be exceeded by video generation")
+
+// VideoTaskQuotaPlatform returns the allowance namespace shared with this executor.
+func VideoTaskQuotaPlatform(provider string) string {
+	if provider == PlatformFal {
+		return PlatformGrok
+	}
+	return provider
+}
 
 // Canonical video price family keys used in groups.video_model_prices JSONB.
 const (
@@ -103,6 +114,11 @@ func NormalizeVideoModelPrices(in map[string]map[string]float64) map[string]map[
 				continue
 			}
 			tier, ok := LookupVideoBillingResolution(tierKey)
+			if !ok && strings.EqualFold(strings.TrimSpace(tierKey), "4k") {
+				if _, isFalEndpoint := falVideoProfiles[family]; isFalEndpoint {
+					tier, ok = "4k", true
+				}
+			}
 			if !ok {
 				slog.Warn("video_model_prices_unknown_resolution_dropped",
 					"model_key", modelKey,

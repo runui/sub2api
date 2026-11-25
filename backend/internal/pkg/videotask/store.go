@@ -1,17 +1,29 @@
-package falvideotask
+package videotask
 
 import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
+const idPrefix = "vidtask_"
+
+func NewID() string { return idPrefix + uuid.NewString() }
+
+// IsID distinguishes locally managed video tasks from upstream-native IDs.
+func IsID(id string) bool { return strings.HasPrefix(id, idPrefix) }
+
 type Task struct {
+	QuotedAmountUSD                                                                           float64
+	Provider, ProfileVersion, ResultPath                                                      string
 	ID, Model, Endpoint, Resolution, State, ResultURL, ErrorCode, IdempotencyKey, Fingerprint string
 	UserID, APIKeyID, GroupID, SubscriptionID, AccountID                                      int64
 	Duration                                                                                  int
-	ActualDuration, UnitPriceUSD                                                              float64
+	ActualDuration                                                                            float64
 	Width, Height                                                                             int
 	Reference                                                                                 []byte
 	CreatedAt, UpdatedAt, NextPollAt                                                          time.Time
@@ -19,8 +31,8 @@ type Task struct {
 }
 
 var (
-	ErrInvalidTransition = errors.New("invalid fal video task transition")
-	ErrLeaseLost         = errors.New("fal video task lease lost")
+	ErrInvalidTransition = errors.New("invalid video task transition")
+	ErrLeaseLost         = errors.New("video task lease lost")
 )
 
 type Store struct {
@@ -30,16 +42,16 @@ type Store struct {
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
 const taskColumns = `id, model, endpoint, resolution, state, result_url, error_code, idempotency_key, fingerprint,
-	user_id, api_key_id, group_id, subscription_id, account_id, duration, actual_duration, unit_price_usd,
-	width, height, reference, created_at, updated_at, next_poll_at, COALESCE(lease_token::text, '')`
+	user_id, api_key_id, group_id, subscription_id, account_id, duration, actual_duration,
+	width, height, reference, created_at, updated_at, next_poll_at, COALESCE(lease_token::text, ''), provider, profile_version, result_path, quoted_amount_usd`
 
 func scanTask(row interface{ Scan(...any) error }) (Task, error) {
 	var t Task
 	var next sql.NullTime
 	err := row.Scan(&t.ID, &t.Model, &t.Endpoint, &t.Resolution, &t.State, &t.ResultURL, &t.ErrorCode,
 		&t.IdempotencyKey, &t.Fingerprint, &t.UserID, &t.APIKeyID, &t.GroupID, &t.SubscriptionID,
-		&t.AccountID, &t.Duration, &t.ActualDuration, &t.UnitPriceUSD, &t.Width, &t.Height, &t.Reference,
-		&t.CreatedAt, &t.UpdatedAt, &next, &t.LeaseToken)
+		&t.AccountID, &t.Duration, &t.ActualDuration, &t.Width, &t.Height, &t.Reference,
+		&t.CreatedAt, &t.UpdatedAt, &next, &t.LeaseToken, &t.Provider, &t.ProfileVersion, &t.ResultPath, &t.QuotedAmountUSD)
 	if err != nil {
 		return Task{}, err
 	}
@@ -50,34 +62,34 @@ func scanTask(row interface{ Scan(...any) error }) (Task, error) {
 // Create returns the stored task and whether this call inserted it. An empty key disables idempotency.
 func (s *Store) Create(ctx context.Context, task Task) (Task, bool, error) {
 	t, err := scanTask(s.db.QueryRowContext(ctx, `
-		INSERT INTO fal_video_tasks (id, model, endpoint, resolution, idempotency_key, fingerprint,
-			user_id, api_key_id, group_id, subscription_id, account_id, duration, unit_price_usd)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO video_tasks (id, model, endpoint, resolution, idempotency_key, fingerprint,
+			user_id, api_key_id, group_id, subscription_id, account_id, duration, provider, profile_version, result_path, quoted_amount_usd)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (user_id, api_key_id, group_id, idempotency_key) WHERE idempotency_key <> '' DO NOTHING
 		RETURNING `+taskColumns, task.ID, task.Model, task.Endpoint, task.Resolution,
 		task.IdempotencyKey, task.Fingerprint, task.UserID, task.APIKeyID, task.GroupID,
-		task.SubscriptionID, task.AccountID, task.Duration, task.UnitPriceUSD))
+		task.SubscriptionID, task.AccountID, task.Duration, task.Provider, task.ProfileVersion, task.ResultPath, task.QuotedAmountUSD))
 	if !errors.Is(err, sql.ErrNoRows) {
 		return t, err == nil, err
 	}
 	// A separate statement sees a concurrent insert that committed after the INSERT snapshot.
-	t, err = scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM fal_video_tasks
+	t, err = scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM video_tasks
 		WHERE user_id = $1 AND api_key_id = $2 AND group_id = $3 AND idempotency_key = $4`,
 		task.UserID, task.APIKeyID, task.GroupID, task.IdempotencyKey))
 	return t, false, err
 }
 
 func (s *Store) Get(ctx context.Context, id string) (Task, error) {
-	return scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM fal_video_tasks WHERE id = $1`, id))
+	return scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM video_tasks WHERE id = $1`, id))
 }
 
 func (s *Store) GetByIdempotencyKey(ctx context.Context, userID, keyID, groupID int64, key string) (Task, error) {
-	return scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM fal_video_tasks
+	return scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM video_tasks
 		WHERE user_id = $1 AND api_key_id = $2 AND group_id = $3 AND idempotency_key = $4 AND idempotency_key <> ''`, userID, keyID, groupID, key))
 }
 
 func (s *Store) Accept(ctx context.Context, id string, ref []byte) error {
-	return s.update(ctx, ErrInvalidTransition, `UPDATE fal_video_tasks
+	return s.update(ctx, ErrInvalidTransition, `UPDATE video_tasks
 		SET state = 'queued', reference = $2::json, next_poll_at = statement_timestamp(), updated_at = statement_timestamp()
 		WHERE id = $1 AND state = 'submitting'`, id, string(ref))
 }
@@ -86,31 +98,33 @@ func (s *Store) Reject(ctx context.Context, id, state, code string) error {
 	if state != "failed" && state != "unknown" && state != "pending_failure" {
 		return ErrInvalidTransition
 	}
-	return s.update(ctx, ErrInvalidTransition, `UPDATE fal_video_tasks
+	return s.update(ctx, ErrInvalidTransition, `UPDATE video_tasks
 		SET state = $2::text, error_code = $3, updated_at = statement_timestamp(),
 			next_poll_at = CASE WHEN $2 = 'pending_failure' THEN statement_timestamp() END
 		WHERE id = $1 AND state = 'submitting'`, id, state, code)
 }
 
-func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]Task, error) {
+// Claim scopes leases to the worker's provider; idempotency remains provider-independent.
+func (s *Store) Claim(ctx context.Context, provider string, limit int, lease time.Duration) ([]Task, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 	if lease <= 0 {
-		return nil, errors.New("fal video task lease must be positive")
+		return nil, errors.New("video task lease must be positive")
 	}
 	rows, err := s.db.QueryContext(ctx, `WITH due AS (
-		SELECT id FROM fal_video_tasks
+		SELECT id FROM video_tasks
 		WHERE state IN ('queued', 'running', 'pending_success', 'pending_failure')
+		  AND provider = $3
 		  AND next_poll_at <= statement_timestamp()
 		  AND (lease_until IS NULL OR lease_until <= statement_timestamp())
 		ORDER BY next_poll_at, id LIMIT $1 FOR UPDATE SKIP LOCKED
 	)
-	UPDATE fal_video_tasks
+	UPDATE video_tasks
 	SET lease_token = gen_random_uuid(), lease_until = clock_timestamp() + $2::bigint * interval '1 microsecond',
 		updated_at = statement_timestamp()
 	WHERE id IN (SELECT id FROM due)
-	RETURNING `+taskColumns, limit, 1+(lease-1).Microseconds())
+	RETURNING `+taskColumns, limit, 1+(lease-1).Microseconds(), provider)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +144,7 @@ func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]Ta
 }
 
 func (s *Store) Reschedule(ctx context.Context, id, leaseToken, state string, next time.Time) error {
-	return s.update(ctx, ErrLeaseLost, `UPDATE fal_video_tasks
+	return s.update(ctx, ErrLeaseLost, `UPDATE video_tasks
 		SET state = $3::text, next_poll_at = $4, lease_token = NULL, lease_until = NULL, updated_at = statement_timestamp()
 		WHERE id = $1 AND lease_token::text = $2 AND lease_until > clock_timestamp()
 		  AND ((state IN ('queued', 'running') AND $3 IN ('queued', 'running'))
@@ -140,7 +154,7 @@ func (s *Store) Reschedule(ctx context.Context, id, leaseToken, state string, ne
 // Finish records a poll outcome or finalizes a previously recorded settlement outcome.
 // The latter preserves the poll result, so settlement retries do not need to supply it again.
 func (s *Store) Finish(ctx context.Context, id, leaseToken, state, resultURL string, duration float64, width, height int, errorCode string) error {
-	return s.update(ctx, ErrLeaseLost, `UPDATE fal_video_tasks
+	return s.update(ctx, ErrLeaseLost, `UPDATE video_tasks
 		SET state = $3::text,
 			result_url = CASE WHEN state IN ('queued', 'running') THEN $4 ELSE result_url END,
 			actual_duration = CASE WHEN state IN ('queued', 'running') THEN $5 ELSE actual_duration END,
@@ -156,11 +170,11 @@ func (s *Store) Finish(ctx context.Context, id, leaseToken, state, resultURL str
 		id, leaseToken, state, resultURL, duration, width, height, errorCode)
 }
 
-func (s *Store) MarkStaleSubmissions(ctx context.Context, olderThan time.Time) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE fal_video_tasks
+func (s *Store) MarkStaleSubmissions(ctx context.Context, provider string, olderThan time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE video_tasks
 		SET state = 'pending_failure', error_code = 'submission_unknown',
 			next_poll_at = statement_timestamp(), updated_at = statement_timestamp()
-		WHERE state = 'submitting' AND updated_at < $1`, olderThan)
+		WHERE provider = $1 AND state = 'submitting' AND updated_at < $2`, provider, olderThan)
 	return err
 }
 

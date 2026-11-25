@@ -53,11 +53,45 @@ type UpstreamModelMetadataSnapshot struct {
 }
 
 type UpstreamModelCatalog struct {
+	Capabilities         []UpstreamModelCapability        `json:"capabilities,omitempty"`
 	Models               []string                         `json:"models"`
 	Metadata             map[string]UpstreamModelMetadata `json:"metadata,omitempty"`
 	Warnings             []UpstreamModelSyncWarning       `json:"warnings,omitempty"`
 	DiscoverySource      string                           `json:"discovery_source,omitempty"`
 	GrokModelDiagnostics *GrokModelDiagnostics            `json:"grok_model_diagnostics,omitempty"`
+}
+
+type UpstreamModelCapability struct {
+	ID               string   `json:"id"`
+	Operations       []string `json:"operations,omitempty"`
+	InputModalities  []string `json:"input_modalities,omitempty"`
+	OutputModalities []string `json:"output_modalities,omitempty"`
+	Category         string   `json:"category,omitempty"`
+	Status           string   `json:"status,omitempty"`
+	Source           string   `json:"source"`
+	Ready            bool     `json:"ready"`
+	RequiresPrice    bool     `json:"requires_price,omitempty"`
+	Reason           string   `json:"reason,omitempty"`
+}
+
+// AccountModelCatalogSnapshotRepository stores complete observations separately
+// from routing mappings and credentials. Source identifies the discovery feed.
+type AccountModelCatalogSnapshotRepository interface {
+	SaveAccountModelCatalogSnapshot(context.Context, *Account, string, time.Time, *UpstreamModelCatalog) error
+}
+
+func (s *AccountTestService) syncAccountModelCatalog(ctx context.Context, account *Account, source string, discover func(context.Context, *Account) (*UpstreamModelCatalog, error)) (*UpstreamModelCatalog, error) {
+	startedAt := time.Now().UTC()
+	catalog, err := discover(ctx, account)
+	if err != nil || account.ID <= 0 {
+		return catalog, err
+	}
+	if repo, ok := s.accountRepo.(AccountModelCatalogSnapshotRepository); ok {
+		if err := repo.SaveAccountModelCatalogSnapshot(ctx, account, source, startedAt, catalog); err != nil {
+			return nil, newUpstreamModelSyncInternalError("Failed to save upstream model catalog", err)
+		}
+	}
+	return catalog, nil
 }
 
 // upstreamModelListFetchResult is the live model list plus an optional Grok
@@ -223,6 +257,9 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 // snapshot. When no model is complete, the existing account snapshot is left
 // untouched.
 func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, account *Account) (*UpstreamModelCatalog, error) {
+	if account != nil && account.Platform == PlatformFal {
+		return s.syncAccountModelCatalog(ctx, account, "fal_platform_api", s.discoverFalModelCatalog)
+	}
 	fetched, err := s.fetchUpstreamModelListWithObservation(ctx, account)
 	var (
 		models          []string
@@ -309,6 +346,9 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 	}
 
 	completeMetadata := completeUpstreamModelMetadataSubset(capabilityIDs, catalog.Metadata)
+	if account != nil && account.IsGrok() && liveListAvailable {
+		catalog.Capabilities = discoverGrokCapabilities(models, catalog.Metadata)
+	}
 	persistedCapabilities := false
 	if len(completeMetadata) > 0 && account != nil && account.ID > 0 && s.accountRepo != nil {
 		// Retain known metadata only for models still listed or explicitly mapped.
@@ -814,6 +854,13 @@ func (s *AccountTestService) fetchUpstreamModelListRequest(ctx context.Context, 
 
 	if s.httpUpstream == nil {
 		return nil, nil, nil, newUpstreamModelSyncConfigError("Upstream HTTP client is not configured", nil)
+	}
+	if account.Platform == PlatformFal {
+		catalog, err := s.discoverFalModelCatalog(ctx, account)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return catalog.Models, nil, nil, nil
 	}
 
 	if account.IsGemini() && account.IsVertexServiceAccount() {

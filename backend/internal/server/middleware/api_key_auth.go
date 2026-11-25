@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/videotask"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -177,13 +178,13 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		c.Request = c.Request.WithContext(ctx)
 		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
 		// Async task reads must survive exhausted balance or quota. An expired
-		// fal reader key is still invalid; ownership is checked by the handler.
-		falVideoRead := isFalVideoTaskRead(c)
-		if falVideoRead && (apiKey.Status == service.StatusAPIKeyExpired || apiKey.IsExpired()) {
+		// reader key is still invalid; ownership is checked by the handler.
+		videoTaskRead := isVideoTaskRead(c)
+		if videoTaskRead && (apiKey.Status == service.StatusAPIKeyExpired || apiKey.IsExpired()) {
 			AbortWithError(c, 403, "API_KEY_EXPIRED", "API key has expired")
 			return
 		}
-		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || falVideoRead
+		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || videoTaskRead
 
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
@@ -208,7 +209,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 
 		// 倍率自省不需要订阅数据；/v1/usage 仍保留原有订阅读取行为。
-		if isSubscriptionType && subscriptionService != nil && !billingInfoRequest && !falVideoRead {
+		if isSubscriptionType && subscriptionService != nil && !billingInfoRequest && !videoTaskRead {
 			sub, subErr := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
@@ -228,7 +229,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// ── 6. 计费执行（skipBilling 时整块跳过） ────────────────────
 
 		if !skipBilling {
-			deferSpendingDenial := canReplayFalVideo(c, apiKey)
+			deferSpendingDenial := canReplayVideoTask(c, apiKey)
 			// Key 状态检查
 			switch apiKey.Status {
 			case service.StatusAPIKeyQuotaExhausted:
@@ -236,7 +237,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					abortWithAPIKeyQuotaError(c)
 					return
 				}
-				c.Set(falVideoSpendingDenialKey, gin.HandlerFunc(abortWithAPIKeyQuotaError))
+				c.Set(videoTaskSpendingDenialKey, gin.HandlerFunc(abortWithAPIKeyQuotaError))
 			case service.StatusAPIKeyExpired:
 				AbortWithError(c, 403, "API_KEY_EXPIRED", "API key 已过期")
 				return
@@ -252,7 +253,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					abortWithAPIKeyQuotaError(c)
 					return
 				}
-				c.Set(falVideoSpendingDenialKey, gin.HandlerFunc(abortWithAPIKeyQuotaError))
+				c.Set(videoTaskSpendingDenialKey, gin.HandlerFunc(abortWithAPIKeyQuotaError))
 			}
 
 			// 订阅模式：验证订阅限额
@@ -287,8 +288,8 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 						deny(c)
 						return
 					}
-					if _, exists := c.Get(falVideoSpendingDenialKey); !exists {
-						c.Set(falVideoSpendingDenialKey, deny)
+					if _, exists := c.Get(videoTaskSpendingDenialKey); !exists {
+						c.Set(videoTaskSpendingDenialKey, deny)
 					}
 				}
 			}
@@ -367,8 +368,8 @@ func isAsyncImageTaskRead(method, path string) bool {
 	return strings.HasPrefix(path, "/v1/images/tasks/") || strings.HasPrefix(path, "/images/tasks/")
 }
 
-func isFalVideoTaskRead(c *gin.Context) bool {
-	if c.Request.Method != http.MethodGet || !service.IsFalVideoTaskID(c.Param("request_id")) {
+func isVideoTaskRead(c *gin.Context) bool {
+	if c.Request.Method != http.MethodGet || !videotask.IsID(c.Param("request_id")) {
 		return false
 	}
 	switch strings.TrimPrefix(c.FullPath(), "/v1") {
@@ -380,9 +381,9 @@ func isFalVideoTaskRead(c *gin.Context) bool {
 	}
 }
 
-const falVideoSpendingDenialKey = "fal_video_spending_denial"
+const videoTaskSpendingDenialKey = "video_task_spending_denial"
 
-func canReplayFalVideo(c *gin.Context, key *service.APIKey) bool {
+func canReplayVideoTask(c *gin.Context, key *service.APIKey) bool {
 	if c.Request.Method != http.MethodPost || strings.TrimSpace(c.GetHeader("Idempotency-Key")) == "" || key.GroupID == nil || key.Group == nil || key.Group.IsSubscriptionType() {
 		return false
 	}
@@ -393,9 +394,9 @@ func canReplayFalVideo(c *gin.Context, key *service.APIKey) bool {
 	return false
 }
 
-// RejectFalVideoSpendingDenial preserves the normal admission gate for any new or unmatched request.
-func RejectFalVideoSpendingDenial(c *gin.Context) bool {
-	if deny, ok := c.Get(falVideoSpendingDenialKey); ok {
+// RejectVideoTaskSpendingDenial preserves the normal admission gate for any new or unmatched request.
+func RejectVideoTaskSpendingDenial(c *gin.Context) bool {
+	if deny, ok := c.Get(videoTaskSpendingDenialKey); ok {
 		deny.(gin.HandlerFunc)(c)
 		return true
 	}

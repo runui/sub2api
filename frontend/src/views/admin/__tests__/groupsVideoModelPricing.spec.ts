@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  addVideoEndpointPrice,
   createVideoModelPricesForm,
   serializeVideoModelPrices,
-  videoModelPriceFamilyRows
+  videoModelPriceFamilyRows,
+  videoModelPriceResolutions
 } from '../groupsVideoModelPricing'
 
 describe('Grok video model pricing form', () => {
+  it('adds an exact endpoint price with a separate 4K tier', () => {
+    const form = createVideoModelPricesForm()
+    expect(addVideoEndpointPrice(form, 'https://queue.fal.run/fal-ai/veo3.1')).toBe(false)
+    expect(addVideoEndpointPrice(form, ' fal-ai/veo3.1/fast ')).toBe(true)
+    const endpoint = 'fal-ai/veo3.1/fast'
+    expect(videoModelPriceResolutions(endpoint).map(({ key }) => key)).toContain('4k')
+    form[endpoint]['4k'] = 0.45
+    expect(serializeVideoModelPrices(form)).toEqual({ [endpoint]: { '4k': 0.45 } })
+  })
   it('provides editable rows for both canonical Grok video families', () => {
     const form = createVideoModelPricesForm()
 

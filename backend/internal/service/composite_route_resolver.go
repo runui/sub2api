@@ -156,7 +156,8 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 			return decision, nil
 		} else if ownership.Matched {
 			platform := strings.TrimSpace(ownership.TargetPlatform)
-			if !isConcreteRequestPlatform(platform) && !(endpoint == CompositeRouteEndpointVideos && platform == PlatformFal) {
+			if (endpoint == CompositeRouteEndpointVideos && !supportsVideoRoutePlatform(platform)) ||
+				(endpoint != CompositeRouteEndpointVideos && !isConcreteRequestPlatform(platform)) {
 				decision.Reason = "account model ownership has no concrete target platform"
 				return decision, nil
 			}

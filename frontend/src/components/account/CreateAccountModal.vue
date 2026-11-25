@@ -1527,21 +1527,9 @@
         </div>
       </div>
 
-      <div v-if="form.platform === 'fal'">
-        <label for="create-fal-api-key" class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
-        <input id="create-fal-api-key" v-model="apiKeyValue" type="password" required autocomplete="new-password" class="input font-mono" />
-        <p class="input-hint">{{ t('admin.accounts.falRouteHint') }}</p>
-        <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="mt-2 flex items-center gap-2">
-          <input v-model="mapping.from" :aria-label="t('admin.accounts.requestModel')" :placeholder="t('admin.accounts.requestModel')" class="input min-w-0" />
-          <input v-model="mapping.to" :aria-label="t('admin.accounts.actualModel')" placeholder="xai/grok-imagine-video/v1.5" class="input min-w-0" />
-          <button type="button" class="btn btn-secondary" @click="removeModelMapping(index)">{{ t('common.remove') }}</button>
-        </div>
-        <button type="button" class="btn btn-secondary mt-2" @click="addModelMapping">{{ t('admin.accounts.addMapping') }}</button>
-      </div>
-
-      <!-- API Key input (Antigravity and fal have their own fields) -->
-      <div v-else-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
-        <div v-if="!isMultiProtocolPlatform || apiProtocol !== 'adaptive'">
+      <!-- API Key input (Antigravity has its own fields) -->
+      <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
+        <div v-if="form.platform !== 'fal' && (!isMultiProtocolPlatform || apiProtocol !== 'adaptive')">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="apiKeyBaseUrl"
@@ -1565,7 +1553,7 @@
             @select="onCnPresetSelect"
           />
         </div>
-        <div v-else>
+        <div v-else-if="form.platform !== 'fal'">
           <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
           <div class="mt-2 space-y-3">
             <div v-for="item in cnAdaptiveProtocolOptions" :key="item.value">
@@ -1591,19 +1579,22 @@
           :plan="currentOpenCodeOrCNMode()"
         />
         <div>
-          <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
+          <label :for="form.platform === 'fal' ? 'create-fal-api-key' : undefined" class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
           <input
+            :id="form.platform === 'fal' ? 'create-fal-api-key' : undefined"
             v-model="apiKeyValue"
             type="password"
             required
+            :autocomplete="form.platform === 'fal' ? 'new-password' : undefined"
             class="input font-mono"
             :placeholder="apiKeyValuePlaceholder"
           />
-          <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
+          <p v-if="form.platform !== 'fal' && apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
         </div>
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
         <div
+          v-if="form.platform !== 'fal'"
           class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
         >
           <div>
@@ -1632,6 +1623,7 @@
         <!-- Model Restriction Section (Antigravity 已在上层条件排除) -->
         <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
+          <p v-if="form.platform === 'fal'" class="input-hint mb-3">{{ t('admin.accounts.falRouteHint') }}</p>
 
           <div
             v-if="isOpenAIModelRestrictionDisabled"
@@ -1708,7 +1700,7 @@
               />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-                <span v-if="allowedModels.length === 0">{{
+                <span v-if="form.platform !== 'fal' && allowedModels.length === 0">{{
                   t('admin.accounts.supportsAllModels')
                 }}</span>
               </p>
@@ -1822,7 +1814,7 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="form.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
@@ -1928,7 +1920,7 @@
         </div>
 
         <!-- Custom Error Codes Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="form.platform !== 'fal'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
@@ -4361,6 +4353,7 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
 })
 
 const apiKeyValuePlaceholder = computed(() => {
+  if (form.platform === 'fal') return undefined
   switch (form.platform) {
     case 'openai':
       return 'sk-proj-...'
@@ -4695,6 +4688,10 @@ const upstreamGroupSource = computed(() => {
 })
 
 const syncPreviewCredentials = computed(() => {
+  if (form.platform === 'fal') {
+    const apiKey = apiKeyValue.value.trim()
+    return apiKey ? { platform: form.platform, type: form.type, api_key: apiKey } : undefined
+  }
   if (!apiKeyValue.value) return undefined
   const modelMapping = buildModelMappingObject(
     modelRestrictionMode.value,
@@ -5234,6 +5231,7 @@ watch(
   (newPlatform, previousPlatform) => {
     if (newPlatform === 'fal' || previousPlatform === 'fal') {
       apiKeyValue.value = ''
+      modelRestrictionMode.value = 'whitelist'
     }
     // Reset base URL based on platform
     if (isMultiProtocolApiKeyPlatform(newPlatform)) {
@@ -6060,7 +6058,7 @@ const handleSubmit = async () => {
       appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
       return
     }
-    const mapping = buildModelMappingObject('mapping', [], modelMappings.value)
+    const mapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
     await doCreateAccount({
       name: form.name.trim(),
       notes: form.notes,

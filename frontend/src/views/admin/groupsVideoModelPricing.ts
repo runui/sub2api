@@ -9,8 +9,21 @@ export const grokVideoPriceFamilies = [
   { key: 'grok-imagine-video-1.5', label: 'grok-imagine-video-1.5' }
 ] as const
 
+const highResolution = { key: '4k', label: '4K' } as const
+
+export function videoModelPriceResolutions(model: string) {
+  return model.includes('/') ? [...grokVideoPriceResolutions, highResolution] : grokVideoPriceResolutions
+}
+
 export type VideoModelPrices = Record<string, Record<string, number>>
 export type VideoModelPricesForm = Record<string, Record<string, number | string | null>>
+
+export function addVideoEndpointPrice(form: VideoModelPricesForm, endpoint: string): boolean {
+  const key = endpoint.trim().toLowerCase()
+  if (!/^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)+$/.test(key)) return false
+  form[key] ??= emptyTiers()
+  return true
+}
 
 function normalizeFamily(value: string): string {
   return value.trim().toLowerCase()

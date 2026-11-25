@@ -277,13 +277,13 @@ func TestGatewayRoutesCompositeVideoLookupsUseGrokHandler(t *testing.T) {
 	}
 }
 
-func TestGatewayRoutesFalVideoLookupsNeverFallBackToGrok(t *testing.T) {
+func TestGatewayRoutesVideoTaskLookupsNeverFallBackToGrok(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	groupID := int64(12)
 	RegisterGatewayRoutes(r, &handler.Handlers{
 		Gateway: &handler.GatewayHandler{}, OpenAIGateway: &handler.OpenAIGatewayHandler{},
-		FalVideo: handler.NewFalVideoHandler(nil, nil),
+		VideoTask: handler.NewVideoTaskHandler(nil, nil),
 	}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{ID: 8, UserID: 7, GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI}})
 		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 7})
@@ -292,8 +292,8 @@ func TestGatewayRoutesFalVideoLookupsNeverFallBackToGrok(t *testing.T) {
 	for _, prefix := range []string{"/v1/videos/", "/videos/", "/v1/videos/generations/", "/videos/generations/"} {
 		for _, suffix := range []string{"", "/content"} {
 			w := httptest.NewRecorder()
-			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, prefix+"falvid_123"+suffix, nil))
-			require.Equal(t, http.StatusServiceUnavailable, w.Code, "fal IDs must dispatch to fal even for non-Grok groups")
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, prefix+"vidtask_123"+suffix, nil))
+			require.Equal(t, http.StatusServiceUnavailable, w.Code, "local task IDs must stay in the task handler even for non-Grok groups")
 		}
 	}
 }
@@ -397,7 +397,8 @@ func TestGatewayRoutesVideoAliasesDispatchExplicitModel(t *testing.T) {
 		Endpoint: service.CompositeRouteEndpointVideos, MatchType: service.CompositeRouteMatchExact, Enabled: true,
 	}}})
 	router := gin.New()
-	RegisterGatewayRoutes(router, &handler.Handlers{}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+	tasks := service.ProvideVideoTaskService(nil, &service.FalVideoService{})
+	RegisterGatewayRoutes(router, &handler.Handlers{VideoTask: handler.NewVideoTaskHandler(tasks, nil)}, servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformComposite}})
 		c.Next()
 	}), nil, nil, nil, nil, resolver, &config.Config{Gateway: config.GatewayConfig{MaxBodySize: 1024 * 1024}})
@@ -411,8 +412,8 @@ func TestGatewayRoutesVideoAliasesDispatchExplicitModel(t *testing.T) {
 		req.Header.Set("Content-Type", form.FormDataContentType())
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		// No fal service is installed: its 503 distinguishes dispatch from an unmatched route.
-		require.Equal(t, http.StatusServiceUnavailable, w.Code, "%s: %s", path, w.Body.String())
+		// No subject was installed; the task handler must reject before contacting the adapter.
+		require.Equal(t, http.StatusUnauthorized, w.Code, "%s: %s", path, w.Body.String())
 		require.NotContains(t, w.Body.String(), "Failed to resolve video model route")
 	}
 }

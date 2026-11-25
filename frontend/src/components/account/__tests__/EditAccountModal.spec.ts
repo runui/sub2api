@@ -7,10 +7,11 @@ import {
   setPlatformCatalog
 } from '@/constants/platformCatalog'
 
-const { updateAccountMock, checkMixedChannelRiskMock, previewUpstreamGroup, authIsSimpleMode } = vi.hoisted(() => ({
+const { updateAccountMock, checkMixedChannelRiskMock, previewUpstreamGroup, syncUpstreamModelsMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   previewUpstreamGroup: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
+  syncUpstreamModelsMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
 
@@ -48,7 +49,8 @@ vi.mock('@/api/admin', () => ({
 }))
 
 vi.mock('@/api/admin/accounts', () => ({
-  getAntigravityDefaultModelMapping: vi.fn()
+  getAntigravityDefaultModelMapping: vi.fn(),
+  accountsAPI: { syncUpstreamModels: syncUpstreamModelsMock }
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -310,7 +312,7 @@ function buildOpenAIOAuthParentAccount() {
   } as any
 }
 
-function mountModal(account = buildAccount(), renderGroupSelector = false) {
+function mountModal(account = buildAccount(), renderGroupSelector = false, useRealModelSelector = false) {
   return mount(EditAccountModal, {
     props: {
       show: true,
@@ -325,7 +327,7 @@ function mountModal(account = buildAccount(), renderGroupSelector = false) {
         Icon: true,
         ProxySelector: true,
         GroupSelector: renderGroupSelector ? false : GroupSelectorStub,
-        ModelWhitelistSelector: ModelWhitelistSelectorStub
+        ModelWhitelistSelector: useRealModelSelector ? false : ModelWhitelistSelectorStub
       }
     }
   })
@@ -369,6 +371,26 @@ describe('EditAccountModal', () => {
     } else {
       expect(payload).not.toHaveProperty('credentials')
     }
+    wrapper.unmount()
+  })
+
+  it('syncs fal via the shared whitelist without replacing an existing alias', async () => {
+    const model = 'xai/grok-imagine-video/v1.5'
+    const account = {
+      ...buildAccount(), platform: 'fal', credentials: { model_mapping: { 'video-public': model } },
+      credentials_status: { has_api_key: true }
+    }
+    syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [model] })
+    updateAccountMock.mockClear().mockResolvedValue(account)
+    const wrapper = mountModal(account, false, true)
+    expect(wrapper.get('[placeholder="admin.accounts.requestModel"]').element).toHaveProperty('value', 'video-public')
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.modelWhitelist')!.trigger('click')
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+    expect(syncUpstreamModelsMock).toHaveBeenCalledWith(account.id)
+    await wrapper.get('#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0][1].credentials).toEqual({ model_mapping: { [model]: model, 'video-public': model } })
     wrapper.unmount()
   })
 

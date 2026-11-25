@@ -10,62 +10,64 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/videotask"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
-const falTestModel = "grok-imagine-video-1.5"
+const videoTestModel = "test-video-model"
 
-type falVideoTestTasks struct {
-	submit func(service.FalVideoRequest) (falvideotask.Task, error)
-	replay func(service.FalVideoRequest) (falvideotask.Task, bool, error)
-	get    func(string, int64, int64, int64) (falvideotask.Task, error)
-	open   func(falvideotask.Task, string) (*http.Response, error)
+type videoTaskTestTasks struct {
+	submit func(service.VideoTaskRequest) (videotask.Task, error)
+	replay func(service.VideoTaskRequest) (videotask.Task, bool, error)
+	get    func(string, int64, int64, int64) (videotask.Task, error)
+	open   func(videotask.Task, string) (*http.Response, error)
 }
 
-func (s *falVideoTestTasks) Replay(_ context.Context, req service.FalVideoRequest) (falvideotask.Task, bool, error) {
+func (*videoTaskTestTasks) SupportsProvider(string) bool { return true }
+
+func (s *videoTaskTestTasks) Replay(_ context.Context, req service.VideoTaskRequest) (videotask.Task, bool, error) {
 	if s.replay == nil {
-		return falvideotask.Task{}, false, nil
+		return videotask.Task{}, false, nil
 	}
 	return s.replay(req)
 }
 
-func TestFalVideoReplayBeforeBillingWithRouteRemoved(t *testing.T) {
-	h := &FalVideoHandler{gateway: &OpenAIGatewayHandler{}, tasks: &falVideoTestTasks{
-		replay: func(req service.FalVideoRequest) (falvideotask.Task, bool, error) {
+func TestVideoTaskReplayBeforeBillingWithRouteRemoved(t *testing.T) {
+	h := &VideoTaskHandler{gateway: &OpenAIGatewayHandler{}, tasks: &videoTaskTestTasks{
+		replay: func(req service.VideoTaskRequest) (videotask.Task, bool, error) {
 			require.Equal(t, "original", req.IdempotencyKey)
-			return falvideotask.Task{ID: "falvid_123"}, true, nil
+			return videotask.Task{ID: "vidtask_123"}, true, nil
 		},
 	}}
-	c, w, _ := falVideoTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+falTestModel+`","prompt":"waves"}`))
+	c, w, _ := videoTaskTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+videoTestModel+`","prompt":"waves"}`))
 	c.Request.Header.Set("Idempotency-Key", "original")
 	body, err := io.ReadAll(c.Request.Body)
 	require.NoError(t, err)
-	require.True(t, h.ReplayCreate(c, falTestModel, body))
+	require.True(t, h.ReplayCreate(c, videoTestModel, body))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.JSONEq(t, `{"request_id":"falvid_123"}`, w.Body.String())
+	require.JSONEq(t, `{"request_id":"vidtask_123"}`, w.Body.String())
 }
 
-func (s *falVideoTestTasks) Submit(_ context.Context, req service.FalVideoRequest) (falvideotask.Task, error) {
+func (s *videoTaskTestTasks) Submit(_ context.Context, _ string, req service.VideoTaskRequest) (videotask.Task, error) {
 	return s.submit(req)
 }
 
-func (s *falVideoTestTasks) Get(_ context.Context, id string, userID, keyID, groupID int64) (falvideotask.Task, error) {
+func (s *videoTaskTestTasks) Get(_ context.Context, id string, userID, keyID, groupID int64) (videotask.Task, error) {
 	return s.get(id, userID, keyID, groupID)
 }
 
-func (s *falVideoTestTasks) OpenContent(_ context.Context, task falvideotask.Task, requestedRange string) (*http.Response, error) {
+func (s *videoTaskTestTasks) OpenContent(_ context.Context, task videotask.Task, requestedRange string) (*http.Response, error) {
 	return s.open(task, requestedRange)
 }
 
-func falVideoTestContext(method, path string, body io.Reader) (*gin.Context, *httptest.ResponseRecorder, *service.APIKey) {
+func videoTaskTestContext(method, path string, body io.Reader) (*gin.Context, *httptest.ResponseRecorder, *service.APIKey) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(method, path, body)
-	c.Params = gin.Params{{Key: "request_id", Value: "falvid_123"}}
+	c.Params = gin.Params{{Key: "request_id", Value: "vidtask_123"}}
 	groupID := int64(9)
 	key := &service.APIKey{ID: 8, UserID: 7, GroupID: &groupID, Group: &service.Group{ID: groupID, AllowImageGeneration: true}}
 	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7})
@@ -73,27 +75,27 @@ func falVideoTestContext(method, path string, body io.Reader) (*gin.Context, *ht
 	return c, w, key
 }
 
-func TestFalVideoCreate(t *testing.T) {
-	c, w, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{
-		"model":"`+falTestModel+`","prompt":"Make waves","duration":5,"resolution":"720p",
+func TestVideoTaskCreate(t *testing.T) {
+	c, w, key := videoTaskTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{
+		"model":"`+videoTestModel+`","prompt":"Make waves","duration":5,"resolution":"720p",
 		"image":{"type":"image_url","image_url":{"url":"https://img.example.com/a%2Fb/?signed=1"}}
 	}`))
 	c.Request.Header.Set("Idempotency-Key", "client-key")
-	h := &FalVideoHandler{tasks: &falVideoTestTasks{submit: func(req service.FalVideoRequest) (falvideotask.Task, error) {
-		require.Equal(t, service.FalVideoRequest{
+	h := &VideoTaskHandler{tasks: &videoTaskTestTasks{submit: func(req service.VideoTaskRequest) (videotask.Task, error) {
+		require.Equal(t, service.VideoTaskRequest{
 			UserID: 7, APIKeyID: 8, GroupID: 9, APIKey: key,
-			Model: falTestModel, RoutingModel: falTestModel, Prompt: "Make waves", Duration: 5, Resolution: "720p", IdempotencyKey: "client-key",
+			Model: videoTestModel, RoutingModel: videoTestModel, Prompt: "Make waves", Duration: 5, Resolution: "720p", IdempotencyKey: "client-key",
 			ImageURL: "https://img.example.com/a%2Fb/?signed=1",
 		}, req)
-		return falvideotask.Task{ID: "falvid_123"}, nil
+		return videotask.Task{ID: "vidtask_123"}, nil
 	}}}
-	createFalVideoForTest(t, h, c)
+	createVideoTaskForTest(t, h, c)
 	require.Equal(t, http.StatusOK, w.Code)
-	require.JSONEq(t, `{"request_id":"falvid_123"}`, w.Body.String())
+	require.JSONEq(t, `{"request_id":"vidtask_123"}`, w.Body.String())
 }
 
-func TestFalVideoCreateRejectsUnsupportedFields(t *testing.T) {
-	h := &FalVideoHandler{tasks: &falVideoTestTasks{}}
+func TestVideoTaskCreateRejectsUnsupportedFields(t *testing.T) {
+	h := &VideoTaskHandler{tasks: &videoTaskTestTasks{}}
 	for _, fields := range []string{
 		`"extra":1`, `"Duration":5`, `"duration":"5"`, `"duration":0`, `"duration":null`,
 		`"duration":5,"duration":6`, `"image":["https://example.com/a"]`, `"image":null`,
@@ -106,66 +108,66 @@ func TestFalVideoCreateRejectsUnsupportedFields(t *testing.T) {
 		`"image":"https://example.com:123/a"`, `"image":"https://localhost./a"`,
 	} {
 		t.Run(fields, func(t *testing.T) {
-			body := fmt.Sprintf(`{"model":%q,"prompt":"waves",%s}`, falTestModel, fields)
-			c, w, _ := falVideoTestContext(http.MethodPost, "/videos/generations", strings.NewReader(body))
-			createFalVideoForTest(t, h, c)
+			body := fmt.Sprintf(`{"model":%q,"prompt":"waves",%s}`, videoTestModel, fields)
+			c, w, _ := videoTaskTestContext(http.MethodPost, "/videos/generations", strings.NewReader(body))
+			createVideoTaskForTest(t, h, c)
 			require.Equal(t, http.StatusBadRequest, w.Code)
 			require.Contains(t, w.Body.String(), `"type":"invalid_request_error"`)
 		})
 	}
 }
 
-func TestFalVideoCreatePermissionsAndErrors(t *testing.T) {
+func TestVideoTaskCreatePermissionsAndErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		err  error
 		want int
 	}{
 		{"disabled group", nil, http.StatusForbidden},
-		{"unavailable", service.ErrFalVideoTemporarilyUnavailable, http.StatusServiceUnavailable},
-		{"idempotency conflict", service.ErrFalVideoConflict, http.StatusConflict},
-		{"unknown submission", service.ErrFalVideoSubmissionUnknown, http.StatusBadGateway},
-		{"insufficient balance", service.ErrFalVideoInsufficientBalance, http.StatusForbidden},
-		{"key spending limit", service.ErrFalVideoKeyLimit, http.StatusTooManyRequests},
-		{"provider failure", service.ErrFalVideoUpstream, http.StatusBadGateway},
+		{"unavailable", service.ErrVideoTaskTemporarilyUnavailable, http.StatusServiceUnavailable},
+		{"idempotency conflict", service.ErrVideoTaskConflict, http.StatusConflict},
+		{"unknown submission", service.ErrVideoTaskSubmissionUnknown, http.StatusBadGateway},
+		{"insufficient balance", service.ErrVideoTaskInsufficientBalance, http.StatusForbidden},
+		{"key spending limit", service.ErrVideoTaskKeyLimit, http.StatusTooManyRequests},
+		{"provider failure", service.ErrVideoTaskUpstream, http.StatusBadGateway},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, w, key := falVideoTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+falTestModel+`","prompt":"waves"}`))
+			c, w, key := videoTaskTestContext(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"`+videoTestModel+`","prompt":"waves"}`))
 			key.Group.AllowImageGeneration = tc.err != nil
-			h := &FalVideoHandler{tasks: &falVideoTestTasks{submit: func(service.FalVideoRequest) (falvideotask.Task, error) {
+			h := &VideoTaskHandler{tasks: &videoTaskTestTasks{submit: func(service.VideoTaskRequest) (videotask.Task, error) {
 				require.NotNil(t, tc.err, "disabled groups must not submit")
-				return falvideotask.Task{ID: "falvid_123"}, fmt.Errorf("provider debug secret: %w", tc.err)
+				return videotask.Task{ID: "vidtask_123"}, fmt.Errorf("provider debug secret: %w", tc.err)
 			}}}
-			createFalVideoForTest(t, h, c)
+			createVideoTaskForTest(t, h, c)
 			require.Equal(t, tc.want, w.Code)
 			require.NotContains(t, w.Body.String(), "provider debug secret")
-			if tc.err == service.ErrFalVideoSubmissionUnknown {
-				require.Contains(t, w.Body.String(), `"request_id":"falvid_123"`)
+			if tc.err == service.ErrVideoTaskSubmissionUnknown {
+				require.Contains(t, w.Body.String(), `"request_id":"vidtask_123"`)
 			}
 		})
 	}
 }
 
-func TestFalVideoCreateReleasesGatewayUserSlot(t *testing.T) {
-	for _, submitErr := range []error{nil, service.ErrFalVideoUpstream} {
-		c, w, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+falTestModel+`","prompt":"waves"}`))
+func TestVideoTaskCreateReleasesGatewayUserSlot(t *testing.T) {
+	for _, submitErr := range []error{nil, service.ErrVideoTaskUpstream} {
+		c, w, key := videoTaskTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+videoTestModel+`","prompt":"waves"}`))
 		key.User = &service.User{ID: key.UserID}
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: key.UserID, Concurrency: 1})
 		cache := &helperConcurrencyCacheStub{userSeq: []bool{true}}
 		billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, &config.Config{RunMode: config.RunModeSimple}, nil)
 		t.Cleanup(billing.Stop)
-		h := &FalVideoHandler{
+		h := &VideoTaskHandler{
 			gateway: &OpenAIGatewayHandler{
 				billingCacheService: billing,
 				concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 0),
 			},
-			tasks: &falVideoTestTasks{submit: func(service.FalVideoRequest) (falvideotask.Task, error) {
+			tasks: &videoTaskTestTasks{submit: func(service.VideoTaskRequest) (videotask.Task, error) {
 				require.Equal(t, 1, cache.userAcquireCalls)
 				require.Zero(t, cache.userReleaseCalls)
-				return falvideotask.Task{ID: "falvid_123"}, submitErr
+				return videotask.Task{ID: "vidtask_123"}, submitErr
 			}},
 		}
-		createFalVideoForTest(t, h, c)
+		createVideoTaskForTest(t, h, c)
 		require.Equal(t, 1, cache.userReleaseCalls)
 		if submitErr == nil {
 			require.Equal(t, http.StatusOK, w.Code)
@@ -175,7 +177,7 @@ func TestFalVideoCreateReleasesGatewayUserSlot(t *testing.T) {
 	}
 }
 
-func TestFalVideoCreateRequiresBalanceGroup(t *testing.T) {
+func TestVideoTaskCreateRequiresBalanceGroup(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		apply func(*gin.Context, *service.APIKey)
@@ -187,37 +189,37 @@ func TestFalVideoCreateRequiresBalanceGroup(t *testing.T) {
 		}, http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, w, key := falVideoTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+falTestModel+`","prompt":"waves"}`))
+			c, w, key := videoTaskTestContext(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"`+videoTestModel+`","prompt":"waves"}`))
 			tc.apply(c, key)
-			h := &FalVideoHandler{tasks: &falVideoTestTasks{}}
-			createFalVideoForTest(t, h, c)
+			h := &VideoTaskHandler{tasks: &videoTaskTestTasks{}}
+			createVideoTaskForTest(t, h, c)
 			require.Equal(t, tc.want, w.Code)
 		})
 	}
 }
 
-func TestFalVideoStatus(t *testing.T) {
+func TestVideoTaskStatus(t *testing.T) {
 	for _, tc := range []struct{ state, status string }{
 		{"submitting", "pending"}, {"queued", "pending"}, {"running", "pending"}, {"pending_success", "pending"},
 		{"pending_failure", "pending"}, {"succeeded", "done"}, {"failed", "failed"}, {"unknown", "failed"},
 	} {
 		t.Run(tc.state, func(t *testing.T) {
 			for _, prefix := range []string{"", "/v1"} {
-				c, w, _ := falVideoTestContext(http.MethodGet, prefix+"/videos/generations/falvid_123", nil)
-				h := &FalVideoHandler{tasks: &falVideoTestTasks{get: func(id string, user, key, group int64) (falvideotask.Task, error) {
-					require.Equal(t, "falvid_123", id)
+				c, w, _ := videoTaskTestContext(http.MethodGet, prefix+"/videos/generations/vidtask_123", nil)
+				h := &VideoTaskHandler{tasks: &videoTaskTestTasks{get: func(id string, user, key, group int64) (videotask.Task, error) {
+					require.Equal(t, "vidtask_123", id)
 					require.Equal(t, []int64{7, 8, 9}, []int64{user, key, group})
-					return falvideotask.Task{ID: id, Model: falTestModel, State: tc.state, ResultURL: "https://fal.media/secret",
+					return videotask.Task{ID: id, Model: videoTestModel, State: tc.state, ResultURL: "https://cdn.example.test/secret",
 						ActualDuration: 4.5, Duration: 5, Width: 1280, Height: 720, Resolution: "720p"}, nil
 				}}}
 				h.Status(c)
 				require.Equal(t, http.StatusOK, w.Code)
 				require.Contains(t, w.Body.String(), `"status":"`+tc.status+`"`)
-				require.NotContains(t, w.Body.String(), "fal.media")
+				require.NotContains(t, w.Body.String(), "cdn.example.test")
 				if tc.state == "succeeded" {
-					require.JSONEq(t, fmt.Sprintf(`{"request_id":"falvid_123","status":"done","model":%q,"video":{
+					require.JSONEq(t, fmt.Sprintf(`{"request_id":"vidtask_123","status":"done","model":%q,"video":{
 						"url":%q,"duration":4.5,"width":1280,"height":720,"resolution":"720p"}}`,
-						falTestModel, prefix+"/videos/falvid_123/content"), w.Body.String())
+						videoTestModel, prefix+"/videos/vidtask_123/content"), w.Body.String())
 				} else {
 					require.NotContains(t, w.Body.String(), `"video"`)
 				}
@@ -226,40 +228,40 @@ func TestFalVideoStatus(t *testing.T) {
 	}
 }
 
-func TestFalVideoStatusRejectsWrongOwner(t *testing.T) {
-	c, w, _ := falVideoTestContext(http.MethodGet, "/v1/videos/falvid_123", nil)
-	h := &FalVideoHandler{tasks: &falVideoTestTasks{get: func(string, int64, int64, int64) (falvideotask.Task, error) {
-		return falvideotask.Task{}, fmt.Errorf("private lookup reason: %w", service.ErrFalVideoNotFound)
+func TestVideoTaskStatusRejectsWrongOwner(t *testing.T) {
+	c, w, _ := videoTaskTestContext(http.MethodGet, "/v1/videos/vidtask_123", nil)
+	h := &VideoTaskHandler{tasks: &videoTaskTestTasks{get: func(string, int64, int64, int64) (videotask.Task, error) {
+		return videotask.Task{}, fmt.Errorf("private lookup reason: %w", service.ErrVideoTaskNotFound)
 	}}}
 	h.Status(c)
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.NotContains(t, w.Body.String(), "private lookup reason")
 }
 
-func TestFalVideoLookupRejectsNonFalIDAndUnauthenticatedRequests(t *testing.T) {
-	h := &FalVideoHandler{tasks: &falVideoTestTasks{}}
-	c, w, _ := falVideoTestContext(http.MethodGet, "/v1/videos/legacy", nil)
+func TestVideoTaskLookupRejectsNonTaskIDAndUnauthenticatedRequests(t *testing.T) {
+	h := &VideoTaskHandler{tasks: &videoTaskTestTasks{}}
+	c, w, _ := videoTaskTestContext(http.MethodGet, "/v1/videos/legacy", nil)
 	c.Params[0].Value = "legacy"
 	h.Status(c)
 	require.Equal(t, http.StatusNotFound, w.Code)
 
-	c, w, _ = falVideoTestContext(http.MethodGet, "/v1/videos/falvid_123/content", nil)
+	c, w, _ = videoTaskTestContext(http.MethodGet, "/v1/videos/vidtask_123/content", nil)
 	c.Set(string(middleware.ContextKeyAPIKey), nil)
 	h.Content(c)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-type falVideoTestBody struct {
+type videoTaskTestBody struct {
 	io.Reader
 	closed bool
 }
 
-func (b *falVideoTestBody) Close() error {
+func (b *videoTaskTestBody) Close() error {
 	b.closed = true
 	return nil
 }
 
-func TestFalVideoContentRange(t *testing.T) {
+func TestVideoTaskContentRange(t *testing.T) {
 	for _, tc := range []struct {
 		status      int
 		contentType string
@@ -272,16 +274,16 @@ func TestFalVideoContentRange(t *testing.T) {
 		{http.StatusFound, "video/mp4", http.StatusBadGateway},
 	} {
 		t.Run(fmt.Sprintf("%d %s", tc.status, tc.contentType), func(t *testing.T) {
-			c, w, _ := falVideoTestContext(http.MethodGet, "/v1/videos/falvid_123/content", nil)
+			c, w, _ := videoTaskTestContext(http.MethodGet, "/v1/videos/vidtask_123/content", nil)
 			c.Request.Header.Set("Range", "bytes=0-2")
-			body := &falVideoTestBody{Reader: strings.NewReader("mp4")}
-			h := &FalVideoHandler{tasks: &falVideoTestTasks{
-				get: func(id string, user, key, group int64) (falvideotask.Task, error) {
+			body := &videoTaskTestBody{Reader: strings.NewReader("mp4")}
+			h := &VideoTaskHandler{tasks: &videoTaskTestTasks{
+				get: func(id string, user, key, group int64) (videotask.Task, error) {
 					require.Equal(t, []int64{7, 8, 9}, []int64{user, key, group})
-					return falvideotask.Task{ID: id, State: "succeeded"}, nil
+					return videotask.Task{ID: id, State: "succeeded"}, nil
 				},
-				open: func(task falvideotask.Task, requestedRange string) (*http.Response, error) {
-					require.Equal(t, "falvid_123", task.ID)
+				open: func(task videotask.Task, requestedRange string) (*http.Response, error) {
+					require.Equal(t, "vidtask_123", task.ID)
 					require.Equal(t, "bytes=0-2", requestedRange)
 					header := http.Header{}
 					header.Set("Content-Type", tc.contentType)
@@ -292,7 +294,7 @@ func TestFalVideoContentRange(t *testing.T) {
 						header.Set("Content-Range", "bytes 0-2/10")
 					}
 					header.Set("Set-Cookie", "secret=1")
-					header.Set("Location", "https://fal.media/private")
+					header.Set("Location", "https://cdn.example.test/private")
 					return &http.Response{StatusCode: tc.status, Header: header, Body: body, ContentLength: 3}, nil
 				},
 			}}
@@ -318,19 +320,19 @@ func TestFalVideoContentRange(t *testing.T) {
 	}
 }
 
-func TestFalVideoContentWaitsForSettlement(t *testing.T) {
-	c, w, _ := falVideoTestContext(http.MethodGet, "/v1/videos/falvid_123/content", nil)
-	h := &FalVideoHandler{tasks: &falVideoTestTasks{get: func(id string, _, _, _ int64) (falvideotask.Task, error) {
-		return falvideotask.Task{ID: id, State: "pending_success", ResultURL: "https://fal.media/private"}, nil
+func TestVideoTaskContentWaitsForSettlement(t *testing.T) {
+	c, w, _ := videoTaskTestContext(http.MethodGet, "/v1/videos/vidtask_123/content", nil)
+	h := &VideoTaskHandler{tasks: &videoTaskTestTasks{get: func(id string, _, _, _ int64) (videotask.Task, error) {
+		return videotask.Task{ID: id, State: "pending_success", ResultURL: "https://cdn.example.test/private"}, nil
 	}}}
 	h.Content(c)
 	require.Equal(t, http.StatusConflict, w.Code)
-	require.NotContains(t, w.Body.String(), "fal.media")
+	require.NotContains(t, w.Body.String(), "cdn.example.test")
 }
 
-func createFalVideoForTest(t *testing.T, h *FalVideoHandler, c *gin.Context) {
+func createVideoTaskForTest(t *testing.T, h *VideoTaskHandler, c *gin.Context) {
 	t.Helper()
 	body, err := io.ReadAll(c.Request.Body)
 	require.NoError(t, err)
-	h.Create(c, falTestModel, falTestModel, body)
+	h.Create(c, "test-provider", videoTestModel, videoTestModel, body)
 }

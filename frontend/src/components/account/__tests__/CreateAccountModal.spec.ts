@@ -12,6 +12,7 @@ const {
   probeUpstreamBillingMock,
   previewUpstreamGroup,
   syncUpstreamModelsMock,
+  syncUpstreamModelsPreviewMock,
   showWarningMock,
   importCodexSessionMock,
   createOpenAICodexPATMock,
@@ -21,6 +22,7 @@ const {
   probeUpstreamBillingMock: vi.fn(),
   previewUpstreamGroup: vi.fn(),
   syncUpstreamModelsMock: vi.fn(),
+  syncUpstreamModelsPreviewMock: vi.fn(),
   showWarningMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
@@ -66,6 +68,7 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn().mockResolvedValue([]),
+  accountsAPI: { syncUpstreamModelsPreview: syncUpstreamModelsPreviewMock },
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -141,7 +144,7 @@ const ModelWhitelistSelectorStub = defineComponent({
   >models</button>`,
 })
 
-function mountModal(groups: any[] = []) {
+function mountModal(groups: any[] = [], useRealModelSelector = false) {
   return mount(CreateAccountModal, {
     props: { show: true, proxies: [], groups },
     global: {
@@ -155,7 +158,7 @@ function mountModal(groups: any[] = []) {
         ProxySelector: true,
         ProxyAdBanner: true,
         GroupSelector: GroupSelectorStub,
-        ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        ModelWhitelistSelector: useRealModelSelector ? false : ModelWhitelistSelectorStub,
         QuotaLimitCard: true,
       },
     },
@@ -236,9 +239,10 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).not.toHaveBeenCalled()
 
     await wrapper.get('#create-fal-api-key').setValue(' example-fal-key ')
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.modelMapping')!.trigger('click')
     await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.addMapping')!.trigger('click')
-    await wrapper.get('[aria-label="admin.accounts.requestModel"]').setValue('video-public')
-    await wrapper.get('[aria-label="admin.accounts.actualModel"]').setValue('xai/grok-imagine-video/v1.5')
+    await wrapper.get('[placeholder="admin.accounts.requestModel"]').setValue('video-public')
+    await wrapper.get('[placeholder="admin.accounts.actualModel"]').setValue('xai/grok-imagine-video/v1.5')
     await wrapper.get('#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -254,6 +258,47 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(payload.group_ids).toEqual([])
     expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
     expect(syncUpstreamModelsMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('previews fal models via the shared whitelist and saves their IDs directly', async () => {
+    const model = 'xai/grok-imagine-video/v1.5'
+    syncUpstreamModelsPreviewMock.mockReset().mockResolvedValue({ models: [model] })
+    const wrapper = mountModal([], true)
+    await wrapper.get('[data-testid="platform-button-fal"]').trigger('click')
+    expect(wrapper.find('[data-testid="sync-upstream-models"]').exists()).toBe(false)
+    await wrapper.get('#create-fal-api-key').setValue(' fal-key ')
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+    expect(syncUpstreamModelsPreviewMock).toHaveBeenCalledWith({ platform: 'fal', type: 'apikey', api_key: 'fal-key' })
+    await wrapper.get('[data-tour="account-form-name"]').setValue('fal video')
+    await wrapper.get('#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0][0].credentials).toEqual({ api_key: 'fal-key', model_mapping: { [model]: model } })
+    wrapper.unmount()
+  })
+
+  it('requires explicit selection of priced fal candidates', async () => {
+    const endpoint = 'fal-ai/veo3.1'
+    syncUpstreamModelsPreviewMock.mockReset().mockResolvedValue({
+      models: [endpoint],
+      capabilities: [{ id: endpoint, source: 'fal_catalog', ready: true, requires_price: true, operations: ['video.generate'] }]
+    })
+    const wrapper = mountModal([], true)
+    await wrapper.get('[data-testid="platform-button-fal"]').trigger('click')
+    await wrapper.get('#create-fal-api-key').setValue('fal-key')
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+    // The candidate is still addable after sync; sync did not authorize it.
+    await wrapper.get(`[data-testid="catalog-add-${endpoint}"]`).trigger('click')
+    expect(wrapper.find(`[data-testid="catalog-add-${endpoint}"]`).exists()).toBe(false)
+    await wrapper.get('[data-tour="account-form-name"]').setValue('fal video')
+    await wrapper.get('#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0][0].credentials).toEqual({
+      api_key: 'fal-key',
+      model_mapping: { 'xai/grok-imagine-video/v1.5': 'xai/grok-imagine-video/v1.5', [endpoint]: endpoint }
+    })
     wrapper.unmount()
   })
 

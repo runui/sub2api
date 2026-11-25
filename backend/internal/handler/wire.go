@@ -203,7 +203,7 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
-	falVideoHandler *FalVideoHandler,
+	videoTaskHandler *VideoTaskHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
@@ -231,13 +231,13 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
-		FalVideo:         falVideoHandler,
+		VideoTask:        videoTaskHandler,
 	}
 }
 
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
-	NewFalVideoHandler,
+	NewVideoTaskHandler,
 	// Top-level handlers
 	NewAuthHandler,
 	NewUserHandler,

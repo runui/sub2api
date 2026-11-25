@@ -1143,13 +1143,14 @@
               <div
                 v-for="family in videoModelPriceFamilyRows(createForm.video_model_prices)"
                 :key="family.key"
-                class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))] sm:items-end"
+                class="grid gap-2 sm:items-end"
+                :class="family.key.includes('/') ? 'sm:grid-cols-[minmax(0,1fr)_repeat(4,minmax(0,7rem))]' : 'sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))]'"
               >
                 <div class="min-w-0 pb-1 font-mono text-xs text-gray-700 dark:text-gray-300">
                   {{ family.label }}
                 </div>
                 <label
-                  v-for="resolution in grokVideoPriceResolutions"
+                  v-for="resolution in videoModelPriceResolutions(family.key)"
                   :key="resolution.key"
                   class="block"
                 >
@@ -1166,6 +1167,10 @@
                   />
                 </label>
               </div>
+            </div>
+            <div class="mt-3 flex gap-2">
+              <input v-model="createVideoEndpoint" class="input min-w-0" :aria-label="t('admin.groups.videoPricing.endpointId')" placeholder="fal-ai/veo3.1/fast" />
+              <button type="button" class="btn btn-secondary shrink-0" @click="addEndpointPrice(createForm.video_model_prices, createVideoEndpoint) && (createVideoEndpoint = '')">{{ t('admin.groups.videoPricing.addEndpoint') }}</button>
             </div>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
@@ -2810,13 +2815,14 @@
               <div
                 v-for="family in videoModelPriceFamilyRows(editForm.video_model_prices)"
                 :key="family.key"
-                class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))] sm:items-end"
+                class="grid gap-2 sm:items-end"
+                :class="family.key.includes('/') ? 'sm:grid-cols-[minmax(0,1fr)_repeat(4,minmax(0,7rem))]' : 'sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,7rem))]'"
               >
                 <div class="min-w-0 pb-1 font-mono text-xs text-gray-700 dark:text-gray-300">
                   {{ family.label }}
                 </div>
                 <label
-                  v-for="resolution in grokVideoPriceResolutions"
+                  v-for="resolution in videoModelPriceResolutions(family.key)"
                   :key="resolution.key"
                   class="block"
                 >
@@ -2833,6 +2839,10 @@
                   />
                 </label>
               </div>
+            </div>
+            <div class="mt-3 flex gap-2">
+              <input v-model="editVideoEndpoint" class="input min-w-0" :aria-label="t('admin.groups.videoPricing.endpointId')" placeholder="fal-ai/veo3.1/fast" />
+              <button type="button" class="btn btn-secondary shrink-0" @click="addEndpointPrice(editForm.video_model_prices, editVideoEndpoint) && (editVideoEndpoint = '')">{{ t('admin.groups.videoPricing.addEndpoint') }}</button>
             </div>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
@@ -4429,11 +4439,20 @@ import {
   videoPricingI18nKey,
 } from "./groupsImagePricing";
 import {
+  addVideoEndpointPrice,
   createVideoModelPricesForm,
-  grokVideoPriceResolutions,
   serializeVideoModelPrices,
   videoModelPriceFamilyRows,
+  videoModelPriceResolutions,
 } from "./groupsVideoModelPricing";
+
+const createVideoEndpoint = ref("");
+const editVideoEndpoint = ref("");
+function addEndpointPrice(form: Parameters<typeof addVideoEndpointPrice>[0], endpoint: string) {
+  if (addVideoEndpointPrice(form, endpoint)) return true;
+  appStore.showError(t("admin.groups.videoPricing.invalidEndpoint"));
+  return false;
+}
 
 const supportsLivePlatform = (platform: string): boolean =>
   platform === "openai" || platform === "composite";
@@ -5872,6 +5891,7 @@ const closeCreateModal = () => {
   createForm.video_price_480p = null;
   createForm.video_price_720p = null;
   createForm.video_price_1080p = null;
+  createVideoEndpoint.value = "";
   createForm.video_model_prices = createVideoModelPricesForm();
   createForm.long_context_pricing_enabled = true;
   createForm.force_openai_fast = false;
@@ -6175,6 +6195,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.video_price_480p = group.video_price_480p;
   editForm.video_price_720p = group.video_price_720p;
   editForm.video_price_1080p = group.video_price_1080p;
+  editVideoEndpoint.value = "";
   editForm.video_model_prices = createVideoModelPricesForm(
     group.video_model_prices,
   );

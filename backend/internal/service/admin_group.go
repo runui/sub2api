@@ -261,7 +261,7 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 	if input.Endpoint == CompositeRouteEndpointVideos && !supportsVideoRoutePlatform(input.TargetPlatform) {
 		return nil, fmt.Errorf("target_platform does not support video generation")
 	}
-	if !isConcreteRequestPlatform(input.TargetPlatform) && !(input.Endpoint == CompositeRouteEndpointVideos && input.TargetPlatform == PlatformFal) {
+	if input.Endpoint != CompositeRouteEndpointVideos && !isConcreteRequestPlatform(input.TargetPlatform) {
 		return nil, fmt.Errorf("target_platform must be a concrete provider")
 	}
 	if input.Priority == 0 {

@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideo"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/videotask"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,12 +33,12 @@ const falVideoTestReference = `{
 // The fixture keeps one task and exposes a clock the test can move to the next poll.
 type falVideoTestStore struct {
 	falVideoStore
-	task      falvideotask.Task
+	task      videotask.Task
 	now       time.Time
 	acceptErr error
 }
 
-func (s *falVideoTestStore) Create(_ context.Context, task falvideotask.Task) (falvideotask.Task, bool, error) {
+func (s *falVideoTestStore) Create(_ context.Context, task videotask.Task) (videotask.Task, bool, error) {
 	if s.task.ID != "" {
 		return s.task, false, nil
 	}
@@ -46,16 +47,16 @@ func (s *falVideoTestStore) Create(_ context.Context, task falvideotask.Task) (f
 	return s.task, true, nil
 }
 
-func (s *falVideoTestStore) Get(_ context.Context, id string) (falvideotask.Task, error) {
+func (s *falVideoTestStore) Get(_ context.Context, id string) (videotask.Task, error) {
 	if id != s.task.ID || id == "" {
-		return falvideotask.Task{}, sql.ErrNoRows
+		return videotask.Task{}, sql.ErrNoRows
 	}
 	return s.task, nil
 }
 
-func (s *falVideoTestStore) GetByIdempotencyKey(ctx context.Context, userID, keyID, groupID int64, key string) (falvideotask.Task, error) {
+func (s *falVideoTestStore) GetByIdempotencyKey(ctx context.Context, userID, keyID, groupID int64, key string) (videotask.Task, error) {
 	if s.task.UserID != userID || s.task.APIKeyID != keyID || s.task.GroupID != groupID || s.task.IdempotencyKey != key {
-		return falvideotask.Task{}, sql.ErrNoRows
+		return videotask.Task{}, sql.ErrNoRows
 	}
 	return s.Get(ctx, s.task.ID)
 }
@@ -65,7 +66,7 @@ func (s *falVideoTestStore) Accept(_ context.Context, id string, ref []byte) err
 		return s.acceptErr
 	}
 	if id != s.task.ID || s.task.State != "submitting" {
-		return falvideotask.ErrInvalidTransition
+		return videotask.ErrInvalidTransition
 	}
 	s.task.Reference = append([]byte(nil), ref...)
 	s.task.State, s.task.NextPollAt = "queued", s.now
@@ -74,23 +75,23 @@ func (s *falVideoTestStore) Accept(_ context.Context, id string, ref []byte) err
 
 func (s *falVideoTestStore) Reject(_ context.Context, id, state, code string) error {
 	if id != s.task.ID || s.task.State != "submitting" {
-		return falvideotask.ErrInvalidTransition
+		return videotask.ErrInvalidTransition
 	}
 	s.task.State, s.task.ErrorCode, s.task.NextPollAt = state, code, s.now
 	return nil
 }
 
-func (s *falVideoTestStore) Claim(_ context.Context, _ int, _ time.Duration) ([]falvideotask.Task, error) {
+func (s *falVideoTestStore) Claim(_ context.Context, _ string, _ int, _ time.Duration) ([]videotask.Task, error) {
 	if s.task.NextPollAt.IsZero() || s.task.NextPollAt.After(s.now) || s.task.LeaseToken != "" {
 		return nil, nil
 	}
 	s.task.LeaseToken = "test-lease"
-	return []falvideotask.Task{s.task}, nil
+	return []videotask.Task{s.task}, nil
 }
 
 func (s *falVideoTestStore) Reschedule(_ context.Context, id, token, state string, when time.Time) error {
 	if id != s.task.ID || token == "" || token != s.task.LeaseToken {
-		return falvideotask.ErrLeaseLost
+		return videotask.ErrLeaseLost
 	}
 	s.task.State, s.task.LeaseToken, s.task.NextPollAt = state, "", when
 	return nil
@@ -98,7 +99,7 @@ func (s *falVideoTestStore) Reschedule(_ context.Context, id, token, state strin
 
 func (s *falVideoTestStore) Finish(_ context.Context, id, token, state, url string, duration float64, width, height int, code string) error {
 	if id != s.task.ID || token == "" || token != s.task.LeaseToken {
-		return falvideotask.ErrLeaseLost
+		return videotask.ErrLeaseLost
 	}
 	s.task.ResultURL, s.task.ActualDuration, s.task.Width, s.task.Height = url, duration, width, height
 	s.task.State, s.task.ErrorCode, s.task.LeaseToken, s.task.NextPollAt = state, code, "", time.Time{}
@@ -130,17 +131,17 @@ func (f falVideoTestTransport) Do(req *http.Request, proxy string, accountID int
 }
 
 type falVideoTestBilling struct {
-	reserved  []falvideotask.Task
+	reserved  []videotask.Task
 	settled   []bool
 	settleErr error
 }
 
-func (b *falVideoTestBilling) Reserve(_ context.Context, task falvideotask.Task) error {
+func (b *falVideoTestBilling) Reserve(_ context.Context, task videotask.Task) error {
 	b.reserved = append(b.reserved, task)
 	return nil
 }
 
-func (b *falVideoTestBilling) Settle(_ context.Context, _ falvideotask.Task, success bool) error {
+func (b *falVideoTestBilling) Settle(_ context.Context, _ videotask.Task, success bool) error {
 	b.settled = append(b.settled, success)
 	return b.settleErr
 }
@@ -155,8 +156,8 @@ func (u *falVideoTestUsage) Create(_ context.Context, log *UsageLog) (bool, erro
 	return true, nil
 }
 
-func falVideoFixture() (*FalVideoService, *falVideoTestStore, *falVideoTestBilling, *falVideoTestUsage, FalVideoRequest) {
-	req := FalVideoRequest{Model: "configured-video", Prompt: "a lighthouse at dusk", UserID: 10, APIKeyID: 20, GroupID: 30, IdempotencyKey: "generation-key"}
+func falVideoFixture() (*FalVideoService, *falVideoTestStore, *falVideoTestBilling, *falVideoTestUsage, VideoTaskRequest) {
+	req := VideoTaskRequest{Model: "configured-video", Prompt: "a lighthouse at dusk", UserID: 10, APIKeyID: 20, GroupID: 30, IdempotencyKey: "generation-key"}
 	req.APIKey = &APIKey{Group: &Group{ID: req.GroupID, RateMultiplier: 1, VideoPrice720P: testVideoPrice(0.25), VideoPrice480P: testVideoPrice(0.125)}}
 	store := &falVideoTestStore{now: time.Now()}
 	billing, usage := &falVideoTestBilling{}, &falVideoTestUsage{}
@@ -170,6 +171,91 @@ func falVideoFixture() (*FalVideoService, *falVideoTestStore, *falVideoTestBilli
 
 func falVideoJSON(body string) *http.Response {
 	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}
+}
+
+func TestFalVideoProfileSubmissionPollReplayAndFrozenQuote(t *testing.T) {
+	for _, tc := range []struct{ endpoint, image, aspect string }{
+		{falVideoVeo31, "", "16:9"},
+		{falVideoVeo31 + "/image-to-video", "https://example.test/frame.png", "auto"},
+		{falVideoVeo31Fast, "", "16:9"},
+	} {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			ctx := context.Background()
+			s, store, billing, usage, req := falVideoFixture()
+			s.gateway = &GatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{FalVideoProfilesEnabled: true}}}
+			req.APIKey.Group.VideoRateIndependent = true
+			req.APIKey.Group.VideoRateMultiplier = 1
+			account := s.accounts.(falVideoTestAccounts).account
+			account.Credentials["model_mapping"] = map[string]any{req.Model: tc.endpoint}
+			req.ImageURL, req.Duration, req.Resolution = tc.image, 4, "4k"
+			req.APIKey.Group.VideoModelPrices = NormalizeVideoModelPrices(map[string]map[string]float64{tc.endpoint: {"4K": 0.75}})
+			calls := 0
+			queue := "https://queue.fal.run/" + tc.endpoint
+			job := queue + "/requests/job-1"
+			s.transport = falVideoTestTransport{do: func(r *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+				calls++
+				switch r.URL.String() {
+				case queue:
+					require.Equal(t, http.MethodPost, r.Method)
+					var body map[string]any
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+					expected := map[string]any{"prompt": req.Prompt, "duration": "4s", "resolution": "4k", "aspect_ratio": tc.aspect, "generate_audio": false}
+					if tc.image != "" {
+						expected["image_url"] = tc.image
+					}
+					require.Equal(t, expected, body)
+					require.Len(t, billing.reserved, 1)
+					require.Equal(t, 3.0, billing.reserved[0].QuotedAmountUSD)
+					return falVideoJSON(`{"request_id":"job-1","status_url":"` + job + `/status","response_url":"` + job + `"}`), nil
+				case job + "/status":
+					return falVideoJSON(`{"status":"COMPLETED","request_id":"job-1"}`), nil
+				case job:
+					return falVideoJSON(`{"video":{"url":"https://v3b.fal.media/a.mp4"}}`), nil
+				default:
+					t.Fatalf("unexpected request to %s", r.URL)
+					return nil, nil
+				}
+			}}
+			ack, err := s.Submit(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, tc.endpoint, ack.Endpoint)
+			require.Equal(t, "veo31-v1", ack.ProfileVersion)
+			delete(account.Credentials, "model_mapping")
+			req.APIKey.Group.VideoModelPrices = nil
+			s.gateway.cfg.Gateway.FalVideoProfilesEnabled = false
+			replay, err := s.Submit(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, ack.ID, replay.ID)
+			require.NoError(t, advanceFalVideoFixture(ctx, t, s, store))
+			require.NoError(t, advanceFalVideoFixture(ctx, t, s, store))
+			require.Equal(t, "succeeded", store.task.State)
+			require.Equal(t, "https://v3b.fal.media/a.mp4", store.task.ResultURL)
+			require.Equal(t, []bool{true}, billing.settled)
+			require.Len(t, usage.logs, 1)
+			require.Equal(t, 3.0, usage.logs[0].ActualCost)
+			require.Equal(t, 3, calls)
+		})
+	}
+}
+
+func TestFalVideoProfileRequiresExactGroupPrice(t *testing.T) {
+	s, store, billing, _, req := falVideoFixture()
+	s.accounts.(falVideoTestAccounts).account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
+	_, err := s.Submit(context.Background(), req)
+	require.ErrorContains(t, err, "positive video price")
+	require.Empty(t, billing.reserved)
+	require.Empty(t, store.task.ID)
+}
+
+func TestFalVideoProfileGateBlocksNewSubmissionsOnly(t *testing.T) {
+	s, store, billing, _, req := falVideoFixture()
+	s.gateway = &GatewayService{cfg: &config.Config{}}
+	s.accounts.(falVideoTestAccounts).account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
+	req.APIKey.Group.VideoModelPrices = map[string]map[string]float64{falVideoVeo31: {"720p": 1}}
+	_, err := s.Submit(context.Background(), req)
+	require.ErrorIs(t, err, ErrVideoTaskTemporarilyUnavailable)
+	require.Empty(t, billing.reserved)
+	require.Empty(t, store.task.ID)
 }
 
 func TestFalVideoSubmitMapsInputAndPersistsBeforeAck(t *testing.T) {
@@ -192,9 +278,9 @@ func TestFalVideoSubmitMapsInputAndPersistsBeforeAck(t *testing.T) {
 				body, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
 				require.JSONEq(t, tt.payload, string(body))
-				require.True(t, IsFalVideoTaskID(store.task.ID))
+				require.True(t, videotask.IsID(store.task.ID))
 				require.Equal(t, "submitting", store.task.State)
-				require.Equal(t, tt.price, store.task.UnitPriceUSD)
+				require.Equal(t, tt.price*float64(store.task.Duration), store.task.QuotedAmountUSD)
 				require.Len(t, billing.reserved, 1)
 				require.Equal(t, store.task.ID, billing.reserved[0].ID)
 				return falVideoJSON(falVideoTestReference), nil
@@ -207,15 +293,15 @@ func TestFalVideoSubmitMapsInputAndPersistsBeforeAck(t *testing.T) {
 			require.Equal(t, "queued", persisted.State)
 			require.Equal(t, tt.endpoint, persisted.Endpoint)
 			require.JSONEq(t, falVideoTestReference, string(persisted.Reference))
-			replayed, found, err := s.Replay(context.Background(), req)
+			replayed, found, err := replayVideoTask(context.Background(), store, req)
 			require.NoError(t, err)
 			require.True(t, found)
 			require.Equal(t, ack.ID, replayed.ID)
 			req.Prompt += " changed"
-			_, _, err = s.Replay(context.Background(), req)
-			require.ErrorIs(t, err, ErrFalVideoConflict)
+			_, _, err = replayVideoTask(context.Background(), store, req)
+			require.ErrorIs(t, err, ErrVideoTaskConflict)
 			req.APIKeyID++
-			_, found, err = s.Replay(context.Background(), req)
+			_, found, err = replayVideoTask(context.Background(), store, req)
 			require.NoError(t, err)
 			require.False(t, found)
 		})
@@ -228,24 +314,25 @@ func TestFalVideoModelIsolationAndOwnership(t *testing.T) {
 	wrong := req
 	wrong.RoutingModel = falVideoTextEndpoint
 	_, err := s.Submit(ctx, wrong)
-	require.ErrorIs(t, err, ErrFalVideoTemporarilyUnavailable)
+	require.ErrorIs(t, err, ErrVideoTaskTemporarilyUnavailable)
 	wrong = req
 	wrong.GroupID++
 	_, err = s.Submit(ctx, wrong)
-	require.ErrorIs(t, err, ErrFalVideoNotFound)
+	require.ErrorIs(t, err, ErrVideoTaskNotFound)
 	require.Empty(t, store.task.ID)
 
-	store.task = falvideotask.Task{ID: "falvid_owned", UserID: req.UserID, APIKeyID: req.APIKeyID, GroupID: req.GroupID, State: "queued"}
-	got, err := s.Get(ctx, store.task.ID, req.UserID, req.APIKeyID, req.GroupID)
+	tasks := &VideoTaskService{store: store}
+	store.task = videotask.Task{ID: "vidtask_owned", Provider: PlatformFal, UserID: req.UserID, APIKeyID: req.APIKeyID, GroupID: req.GroupID, State: "queued"}
+	got, err := tasks.Get(ctx, store.task.ID, req.UserID, req.APIKeyID, req.GroupID)
 	require.NoError(t, err)
 	require.Equal(t, store.task.ID, got.ID)
 	for _, owner := range [][3]int64{{req.UserID + 1, req.APIKeyID, req.GroupID}, {req.UserID, req.APIKeyID + 1, req.GroupID}, {req.UserID, req.APIKeyID, req.GroupID + 1}} {
-		got, err := s.Get(ctx, store.task.ID, owner[0], owner[1], owner[2])
-		require.ErrorIs(t, err, ErrFalVideoNotFound)
+		got, err := tasks.Get(ctx, store.task.ID, owner[0], owner[1], owner[2])
+		require.ErrorIs(t, err, ErrVideoTaskNotFound)
 		require.Empty(t, got.ID)
 	}
-	_, err = s.Get(ctx, "falvid_missing", req.UserID, req.APIKeyID, req.GroupID)
-	require.ErrorIs(t, err, ErrFalVideoNotFound)
+	_, err = tasks.Get(ctx, "vidtask_missing", req.UserID, req.APIKeyID, req.GroupID)
+	require.ErrorIs(t, err, ErrVideoTaskNotFound)
 }
 
 type falVideoPoolRepo struct {
@@ -294,13 +381,13 @@ func TestFalVideoBusyAccountFallsBackAndQuoteSurvivesReplay(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []int64{40, 41}, slots.attempted)
 	require.Equal(t, []int64{41}, slots.released)
-	require.Equal(t, 0.125, firstTask.UnitPriceUSD)
+	require.Equal(t, 0.75, firstTask.QuotedAmountUSD)
 	req.APIKey.Group.VideoRateMultiplier = 2
 	req.RoutingModel = "removed-route"
 	replay, err := s.Submit(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, firstTask.ID, replay.ID)
-	require.Equal(t, firstTask.UnitPriceUSD, replay.UnitPriceUSD)
+	require.Equal(t, firstTask.QuotedAmountUSD, replay.QuotedAmountUSD)
 	require.Equal(t, 1, posts)
 	require.Len(t, billing.reserved, 1)
 }
@@ -327,7 +414,7 @@ func TestFalVideoAmbiguousSubmitIsNotRetried(t *testing.T) {
 			}}
 			ctx := context.Background()
 			_, err := s.Submit(ctx, req)
-			require.ErrorIs(t, err, ErrFalVideoSubmissionUnknown)
+			require.ErrorIs(t, err, ErrVideoTaskSubmissionUnknown)
 			require.Empty(t, store.task.Reference)
 			if acceptFails {
 				require.Equal(t, "submitting", store.task.State)
@@ -341,14 +428,14 @@ func TestFalVideoAmbiguousSubmitIsNotRetried(t *testing.T) {
 			}
 			replayed, err := s.Submit(ctx, req)
 			if acceptFails {
-				require.ErrorIs(t, err, ErrFalVideoSubmitting)
+				require.ErrorIs(t, err, ErrVideoTaskSubmitting)
 			} else {
 				require.NoError(t, err)
 			}
 			require.Equal(t, store.task.ID, replayed.ID)
 			req.Prompt += " with waves"
 			_, err = s.Submit(ctx, req)
-			require.ErrorIs(t, err, ErrFalVideoConflict)
+			require.ErrorIs(t, err, ErrVideoTaskConflict)
 			require.Equal(t, 1, posts)
 			require.Len(t, billing.reserved, 1)
 		})
@@ -357,7 +444,7 @@ func TestFalVideoAmbiguousSubmitIsNotRetried(t *testing.T) {
 
 func advanceFalVideoFixture(ctx context.Context, t *testing.T, s *FalVideoService, store *falVideoTestStore) error {
 	t.Helper()
-	jobs, err := store.Claim(ctx, 1, time.Minute)
+	jobs, err := store.Claim(ctx, PlatformFal, 1, time.Minute)
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	return s.advance(ctx, jobs[0])
@@ -435,7 +522,7 @@ func TestFalVideoContentUsesUncredentialedRangeRequest(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusPartialContent, Header: http.Header{"Content-Range": {"bytes 10-19/100"}}, Body: io.NopCloser(strings.NewReader("abcdefghij"))}, nil
 	}
 	ctx := context.Background()
-	resp, err := s.OpenContent(ctx, falvideotask.Task{State: "succeeded", ResultURL: falVideoTestCDN}, "bytes=10-19")
+	resp, err := s.OpenContent(ctx, videotask.Task{State: "succeeded", ResultURL: falVideoTestCDN}, "bytes=10-19")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusPartialContent, resp.StatusCode)
@@ -443,10 +530,10 @@ func TestFalVideoContentUsesUncredentialedRangeRequest(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, "abcdefghij", string(body))
-	_, err = s.OpenContent(ctx, falvideotask.Task{State: "pending_success", ResultURL: falVideoTestCDN}, "")
-	require.ErrorIs(t, err, ErrFalVideoConflict)
-	_, err = s.OpenContent(ctx, falvideotask.Task{State: "succeeded", ResultURL: "https://fal.media.example.test/video.mp4"}, "")
-	require.ErrorIs(t, err, ErrFalVideoUpstream)
+	_, err = s.OpenContent(ctx, videotask.Task{State: "pending_success", ResultURL: falVideoTestCDN}, "")
+	require.ErrorIs(t, err, ErrVideoTaskConflict)
+	_, err = s.OpenContent(ctx, videotask.Task{State: "succeeded", ResultURL: "https://fal.media.example.test/video.mp4"}, "")
+	require.ErrorIs(t, err, ErrVideoTaskUpstream)
 	require.Equal(t, 1, calls)
 }
 
@@ -473,8 +560,8 @@ func TestFalVideoContentRejectsOversizedResponses(t *testing.T) {
 			s := &FalVideoService{contentDo: func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: status, ContentLength: falVideoMaxContentBytes + 1, Body: body}, nil
 			}}
-			resp, err := s.OpenContent(context.Background(), falvideotask.Task{State: "succeeded", ResultURL: falVideoTestCDN}, "bytes=0-")
-			require.ErrorIs(t, err, ErrFalVideoUpstream)
+			resp, err := s.OpenContent(context.Background(), videotask.Task{State: "succeeded", ResultURL: falVideoTestCDN}, "bytes=0-")
+			require.ErrorIs(t, err, ErrVideoTaskUpstream)
 			require.Nil(t, resp)
 			require.True(t, body.closed)
 		})
@@ -495,8 +582,8 @@ func TestFalVideoContentDoesNotFollowRedirects(t *testing.T) {
 		}, nil
 	})
 	s := &FalVideoService{contentDo: client.Do}
-	resp, err := s.OpenContent(context.Background(), falvideotask.Task{State: "succeeded", ResultURL: falVideoTestCDN}, "")
-	require.ErrorIs(t, err, ErrFalVideoUpstream)
+	resp, err := s.OpenContent(context.Background(), videotask.Task{State: "succeeded", ResultURL: falVideoTestCDN}, "")
+	require.ErrorIs(t, err, ErrVideoTaskUpstream)
 	require.Nil(t, resp)
 	require.Equal(t, 1, calls)
 	require.True(t, body.closed)

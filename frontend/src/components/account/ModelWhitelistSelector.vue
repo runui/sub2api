@@ -120,6 +120,26 @@
       </button>
     </div>
 
+    <details v-if="discoveredCapabilities.length" class="mb-3 rounded border border-gray-200 p-2 text-xs dark:border-dark-600">
+      <summary class="cursor-pointer">{{ t('admin.accounts.discoveredModelCatalog', { count: discoveredCapabilities.length }) }}</summary>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <input v-model="catalogQuery" class="input flex-1" :placeholder="t('admin.accounts.searchModels')" :aria-label="t('admin.accounts.searchModels')" />
+        <select v-model="catalogOperation" class="input w-auto" :aria-label="t('admin.accounts.modelCapability')">
+          <option value="">{{ t('admin.accounts.allModelCapabilities') }}</option>
+          <option v-for="operation in catalogOperations" :key="operation" :value="operation">{{ operation }}</option>
+        </select>
+      </div>
+      <ul class="mt-2 max-h-52 space-y-1 overflow-auto">
+        <li v-for="entry in filteredCatalog.slice(0, 100)" :key="entry.id" class="break-all">
+          <span class="font-mono">{{ entry.id }}</span>
+          <span class="ml-2 text-gray-500">{{ entry.operations?.join(', ') || entry.category || t('admin.accounts.unknownModelCapability') }} · {{ entry.ready ? t('admin.accounts.catalogModelReady') : t(`admin.accounts.catalogModelReasons.${entry.reason ?? 'not_adapted'}`) }}</span>
+          <span v-if="entry.requires_price" class="ml-1 text-gray-500">· {{ t('admin.accounts.catalogModelRequiresPrice') }}</span>
+          <button v-if="entry.ready && !modelValue.includes(entry.id)" type="button" class="ml-2 text-primary-600 hover:underline" :data-testid="`catalog-add-${entry.id}`" @click="addDiscoveredModel(entry.id)">{{ t('admin.accounts.catalogModelAdd') }}</button>
+        </li>
+      </ul>
+      <p v-if="filteredCatalog.length > 100" class="mt-2 text-gray-500">{{ t('admin.accounts.catalogModelSearchHint') }}</p>
+    </details>
+
     <!-- Custom Model Input -->
     <div class="mb-3">
       <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.accounts.customModelName') }}</label>
@@ -150,7 +170,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
-import type { SyncUpstreamPreviewParams } from '@/api/admin/accounts'
+import type { SyncUpstreamPreviewParams, UpstreamModelCapability } from '@/api/admin/accounts'
 import { useClipboard } from '@/composables/useClipboard'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -189,13 +209,32 @@ const searchQuery = ref('')
 const customModel = ref('')
 const isComposing = ref(false)
 const isSyncingUpstream = ref(false)
+const discoveredCapabilities = ref<UpstreamModelCapability[]>([])
+const catalogQuery = ref('')
+const catalogOperation = ref('')
+const catalogOperations = computed(() => Array.from(new Set(discoveredCapabilities.value.flatMap(entry => entry.operations ?? []))).sort())
+const filteredCatalog = computed(() => {
+  const query = catalogQuery.value.trim().toLowerCase()
+  return discoveredCapabilities.value.filter(entry => entry.id.toLowerCase().includes(query) &&
+    (!catalogOperation.value || entry.operations?.includes(catalogOperation.value)))
+    .sort((left, right) => Number(right.ready) - Number(left.ready))
+})
+
+function addDiscoveredModel(model: string) {
+  if (props.modelValue.includes(model)) return
+  if (!props.accountId) emit('upstream-synced')
+  emit('update:modelValue', [...props.modelValue, model])
+}
 let upstreamSyncVersion = 0
 
 watch(
-  () => props.accountId,
+  [() => props.accountId, () => props.platform],
   () => {
     upstreamSyncVersion += 1
     isSyncingUpstream.value = false
+    discoveredCapabilities.value = []
+    catalogQuery.value = ''
+    catalogOperation.value = ''
   }
 )
 
@@ -335,9 +374,12 @@ const syncUpstreamModels = async () => {
       return
     }
 
-    const upstreamModels = result.models.map(model => model.trim()).filter(Boolean)
+    discoveredCapabilities.value = result.capabilities ?? []
+    // New priced endpoints are candidates until the operator explicitly imports them.
+    const pricedCandidates = new Set(discoveredCapabilities.value.filter(entry => entry.requires_price).map(entry => entry.id))
+    const upstreamModels = result.models.map(model => model.trim()).filter(model => model && !pricedCandidates.has(model))
     if (upstreamModels.length === 0) {
-      appStore.showInfo(t('admin.accounts.syncUpstreamModelsEmpty'))
+      appStore.showInfo(t(pricedCandidates.size ? 'admin.accounts.catalogModelReview' : 'admin.accounts.syncUpstreamModelsEmpty'))
       return
     }
 

@@ -39,6 +39,13 @@ func TestLaterMigrationsDoNotRestorePlatformCheckConstraints(t *testing.T) {
 			content, err := FS.ReadFile(entry.Name())
 			require.NoError(t, err)
 			sql := comments.ReplaceAll(content, nil)
+			if entry.Name() == "256_unify_video_model_routing.sql" {
+				// Already shipped: leave its checksum intact and verify the corrective migration.
+				correction, err := FS.ReadFile("257_video_tasks.sql")
+				require.NoError(t, err)
+				require.Contains(t, string(correction), "DROP CONSTRAINT IF EXISTS composite_model_routes_target_platform_check;")
+				return
+			}
 			require.Nil(t, addConstraint.Find(sql), "platform CHECK constraints removed in 242 must remain managed by application validation")
 		})
 	}

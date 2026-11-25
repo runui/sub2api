@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/videotask"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
@@ -865,9 +866,15 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+// ProvideVideoTaskService wires the locally managed video executors.
+func ProvideVideoTaskService(db *sql.DB, fal *FalVideoService) *VideoTaskService {
+	return &VideoTaskService{store: videotask.NewStore(db), executors: map[string]videoTaskExecutor{PlatformFal: fal}}
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	ProvideFalVideoService,
+	ProvideVideoTaskService,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,

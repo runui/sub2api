@@ -89,13 +89,6 @@ func (e *Error) Error() string {
 // Submit enqueues a model request. endpoint is an owner/app[/variant...] ID or
 // its absolute queue URL. Follow-up URLs may use the full endpoint or owner/app.
 func (c *Client) Submit(ctx context.Context, key, endpoint string, input Input) (Reference, error) {
-	if !strings.Contains(endpoint, "://") {
-		endpoint = "https://" + queueHost + "/" + endpoint
-	}
-	u, parts, err := queueURL(endpoint)
-	if err != nil || !isModelPath(parts) {
-		return Reference{}, errors.New("falvideo: invalid model endpoint")
-	}
 	if input.Duration < 0 {
 		return Reference{}, errors.New("falvideo: duration must not be negative")
 	}
@@ -106,6 +99,19 @@ func (c *Client) Submit(ctx context.Context, key, endpoint string, input Input) 
 	payload, err := json.Marshal(input)
 	if err != nil {
 		return Reference{}, fmt.Errorf("falvideo: encode input: %w", err)
+	}
+	return c.SubmitJSON(ctx, key, endpoint, payload)
+}
+
+// SubmitJSON shares queue and reference validation with the legacy typed client.
+// The caller is responsible for validating the model-specific request body.
+func (c *Client) SubmitJSON(ctx context.Context, key, endpoint string, payload json.RawMessage) (Reference, error) {
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "https://" + queueHost + "/" + endpoint
+	}
+	u, parts, err := queueURL(endpoint)
+	if err != nil || !isModelPath(parts) {
+		return Reference{}, errors.New("falvideo: invalid model endpoint")
 	}
 	var ref Reference
 	if err := c.request(ctx, key, http.MethodPost, u, payload, &ref); err != nil {
@@ -150,14 +156,14 @@ func (c *Client) Status(ctx context.Context, key string, ref Reference) (string,
 // Result retrieves the completed model response. The video URL is returned as
 // data only; it is never requested by this client.
 func (c *Client) Result(ctx context.Context, key string, ref Reference) (Result, error) {
-	_, u, err := ref.urls()
+	body, err := c.ResultJSON(ctx, key, ref)
 	if err != nil {
 		return Result{}, err
 	}
 	var payload struct {
 		Video Result `json:"video"`
 	}
-	if err := c.request(ctx, key, http.MethodGet, u, nil, &payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return Result{}, err
 	}
 	if !isHTTPSURL(payload.Video.URL) {
@@ -167,6 +173,16 @@ func (c *Client) Result(ctx context.Context, key string, ref Reference) (Result,
 		return Result{}, errors.New("falvideo: invalid video metadata")
 	}
 	return payload.Video, nil
+}
+
+func (c *Client) ResultJSON(ctx context.Context, key string, ref Reference) (json.RawMessage, error) {
+	_, u, err := ref.urls()
+	if err != nil {
+		return nil, err
+	}
+	var body json.RawMessage
+	err = c.request(ctx, key, http.MethodGet, u, nil, &body)
+	return body, err
 }
 
 func isHTTPSURL(raw string) bool {

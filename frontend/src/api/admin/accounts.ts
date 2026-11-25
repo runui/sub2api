@@ -610,10 +610,24 @@ export async function getAvailableModels(id: number): Promise<ClaudeModel[]> {
 
 export interface SyncUpstreamModelsResult {
   models: string[]
+  capabilities?: UpstreamModelCapability[]
   metadata?: Record<string, UpstreamModelMetadata>
   warnings?: UpstreamModelSyncWarning[]
   discovery_source?: 'upstream' | 'configured_fallback'
   grok_model_diagnostics?: GrokModelDiagnostics
+}
+
+export interface UpstreamModelCapability {
+  id: string
+  operations?: string[]
+  input_modalities?: string[]
+  output_modalities?: string[]
+  category?: string
+  status?: string
+  source: string
+  ready: boolean
+  requires_price?: boolean
+  reason?: string
 }
 
 export interface UpstreamModelSyncWarning {
@@ -640,7 +654,7 @@ export interface UpstreamModelMetadata {
  * @returns List of model IDs returned by the upstream
  */
 export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModelsResult> {
-  const { data } = await apiClient.post<SyncUpstreamModelsResult>(`/admin/accounts/${id}/models/sync-upstream`)
+  const { data } = await apiClient.post<SyncUpstreamModelsResult>(`/admin/accounts/${id}/models/sync-upstream`, undefined, { timeout: 90_000 })
   return data
 }
 
@@ -658,7 +672,7 @@ export interface SyncUpstreamPreviewParams {
  * @returns List of model IDs returned by the upstream
  */
 export async function syncUpstreamModelsPreview(params: SyncUpstreamPreviewParams): Promise<SyncUpstreamModelsResult> {
-  const { data } = await apiClient.post<SyncUpstreamModelsResult>('/admin/accounts/models/sync-upstream-preview', params)
+  const { data } = await apiClient.post<SyncUpstreamModelsResult>('/admin/accounts/models/sync-upstream-preview', params, { timeout: 90_000 })
   return data
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/videotask"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -55,7 +56,6 @@ func RegisterGatewayRoutes(
 	if videoCreateResolver == nil {
 		videoCreateResolver = service.NewCompositeRouteResolver(nil)
 	}
-
 	// 未分组 Key 拦截中间件（按协议格式区分错误响应）
 	requireGroupAnthropic := middleware.RequireGroupAssignment(settingService, middleware.AnthropicErrorWriter)
 	requireGroupGoogle := middleware.RequireGroupAssignment(settingService, middleware.GoogleErrorWriter)
@@ -128,7 +128,7 @@ func RegisterGatewayRoutes(
 		body = requestmodel.TrimUTF8BOM(body)
 		model := service.ExtractGrokMediaModel(c.GetHeader("Content-Type"), body)
 		// Replay belongs to the original task even if the model now routes elsewhere.
-		if h.FalVideo.ReplayCreate(c, model, body) || middleware.RejectFalVideoSpendingDenial(c) {
+		if h.VideoTask.ReplayCreate(c, model, body) || middleware.RejectVideoTaskSpendingDenial(c) {
 			return
 		}
 		if model == "" {
@@ -146,24 +146,23 @@ func RegisterGatewayRoutes(
 		}
 		if decision.Matched {
 			c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
-			switch decision.TargetPlatform {
-			case service.PlatformFal:
-				h.FalVideo.Create(c, model, decision.UpstreamModel, body)
+			if h.VideoTask.SupportsProvider(decision.TargetPlatform) {
+				h.VideoTask.Create(c, decision.TargetPlatform, decision.PublicModel, decision.UpstreamModel, body)
 				return
-			case service.PlatformGrok:
-				if key.Group.Platform == service.PlatformGrok || key.Group.Platform == service.PlatformComposite {
-					requestmodel.ResetRequestBody(c.Request, body)
-					h.OpenAIGateway.GrokVideoGeneration(c)
-					return
-				}
+			}
+			// Grok's native IDs are not managed by the local task service.
+			if decision.TargetPlatform == service.PlatformGrok && (key.Group.Platform == service.PlatformGrok || key.Group.Platform == service.PlatformComposite) {
+				requestmodel.ResetRequestBody(c.Request, body)
+				h.OpenAIGateway.GrokVideoGeneration(c)
+				return
 			}
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
 		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "No video route for this model"}})
 	}
 	videoStatusHandler := func(c *gin.Context) {
-		if h.FalVideo != nil && service.IsFalVideoTaskID(c.Param("request_id")) {
-			h.FalVideo.Status(c)
+		if h.VideoTask != nil && videotask.IsID(c.Param("request_id")) {
+			h.VideoTask.Status(c)
 			return
 		}
 		// Status requests carry no model. The native handler enforces the
@@ -181,8 +180,8 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoContentHandler := func(c *gin.Context) {
-		if h.FalVideo != nil && service.IsFalVideoTaskID(c.Param("request_id")) {
-			h.FalVideo.Content(c)
+		if h.VideoTask != nil && videotask.IsID(c.Param("request_id")) {
+			h.VideoTask.Content(c)
 			return
 		}
 		// Download uses the same original-account binding as status.

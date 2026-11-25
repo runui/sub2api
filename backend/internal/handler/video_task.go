@@ -14,8 +14,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/falvideotask"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/videotask"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
@@ -23,28 +23,33 @@ import (
 	"go.uber.org/zap"
 )
 
-type falVideoTasks interface {
-	Replay(context.Context, service.FalVideoRequest) (falvideotask.Task, bool, error)
-	Submit(context.Context, service.FalVideoRequest) (falvideotask.Task, error)
-	Get(ctx context.Context, id string, userID, keyID, groupID int64) (falvideotask.Task, error)
-	OpenContent(context.Context, falvideotask.Task, string) (*http.Response, error)
+type videoTasks interface {
+	SupportsProvider(string) bool
+	Replay(context.Context, service.VideoTaskRequest) (videotask.Task, bool, error)
+	Submit(context.Context, string, service.VideoTaskRequest) (videotask.Task, error)
+	Get(ctx context.Context, id string, userID, keyID, groupID int64) (videotask.Task, error)
+	OpenContent(context.Context, videotask.Task, string) (*http.Response, error)
 }
 
-type FalVideoHandler struct {
-	tasks   falVideoTasks
+type VideoTaskHandler struct {
+	tasks   videoTasks
 	gateway *OpenAIGatewayHandler
 }
 
-func NewFalVideoHandler(svc *service.FalVideoService, gateway *OpenAIGatewayHandler) *FalVideoHandler {
-	h := &FalVideoHandler{gateway: gateway}
+func NewVideoTaskHandler(svc *service.VideoTaskService, gateway *OpenAIGatewayHandler) *VideoTaskHandler {
+	h := &VideoTaskHandler{gateway: gateway}
 	if svc != nil {
 		h.tasks = svc
 	}
 	return h
 }
 
+func (h *VideoTaskHandler) SupportsProvider(provider string) bool {
+	return h != nil && h.tasks != nil && h.tasks.SupportsProvider(provider)
+}
+
 // ReplayCreate is checked before resolving a new route or applying spending denial.
-func (h *FalVideoHandler) ReplayCreate(c *gin.Context, model string, body []byte) bool {
+func (h *VideoTaskHandler) ReplayCreate(c *gin.Context, model string, body []byte) bool {
 	if h == nil || h.tasks == nil || model == "" {
 		return false
 	}
@@ -56,28 +61,28 @@ func (h *FalVideoHandler) ReplayCreate(c *gin.Context, model string, body []byte
 	return h.tryReplay(c, key, model, mediaType, body)
 }
 
-func (h *FalVideoHandler) Create(c *gin.Context, model, routingModel string, body []byte) {
+func (h *VideoTaskHandler) Create(c *gin.Context, provider, model, routingModel string, body []byte) {
 	if h == nil || h.tasks == nil {
-		writeFalVideoServiceError(c, service.ErrFalVideoTemporarilyUnavailable, "")
+		writeVideoTaskServiceError(c, service.ErrVideoTaskTemporarilyUnavailable, "")
 		return
 	}
-	if key, subject, ok := falVideoIdentity(c); ok {
+	if key, subject, ok := videoTaskIdentity(c); ok {
 		mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
-		h.create(c, key, subject, model, routingModel, mediaType, body)
+		h.create(c, key, subject, provider, model, routingModel, mediaType, body)
 	}
 }
 
-func (h *FalVideoHandler) tryReplay(c *gin.Context, key *service.APIKey, model, mediaType string, body []byte) bool {
+func (h *VideoTaskHandler) tryReplay(c *gin.Context, key *service.APIKey, model, mediaType string, body []byte) bool {
 	values := c.Request.Header.Values("Idempotency-Key")
 	if len(values) != 1 || strings.TrimSpace(values[0]) == "" || strings.HasPrefix(mediaType, "multipart/") ||
 		key.Group.ID != *key.GroupID || key.Status == service.StatusAPIKeyExpired || key.IsExpired() {
 		return false
 	}
-	req, err := parseFalVideoRequest(body)
+	req, err := parseVideoTaskRequest(body)
 	if err != nil {
 		return false
 	}
-	_, subject, ok := falVideoIdentity(c)
+	_, subject, ok := videoTaskIdentity(c)
 	if !ok {
 		return true
 	}
@@ -90,52 +95,52 @@ func (h *FalVideoHandler) tryReplay(c *gin.Context, key *service.APIKey, model, 
 	setOpsRequestContext(c, model, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 	if err != nil {
-		writeFalVideoServiceError(c, err, task.ID)
+		writeVideoTaskServiceError(c, err, task.ID)
 	} else {
-		writeFalVideoAcknowledgment(c, task.ID)
+		writeVideoTaskAcknowledgment(c, task.ID)
 	}
 	return true
 }
 
-func (h *FalVideoHandler) create(c *gin.Context, key *service.APIKey, subject middleware.AuthSubject, model, routingModel, mediaType string, body []byte) {
+func (h *VideoTaskHandler) create(c *gin.Context, key *service.APIKey, subject middleware.AuthSubject, provider, model, routingModel, mediaType string, body []byte) {
 	if key.Status == service.StatusAPIKeyExpired || key.IsExpired() {
-		falVideoError(c, http.StatusForbidden, "authentication_error", "API_KEY_EXPIRED", "API key has expired", "")
+		videoTaskError(c, http.StatusForbidden, "authentication_error", "API_KEY_EXPIRED", "API key has expired", "")
 		return
 	}
 	if key.Group == nil || key.Group.ID != *key.GroupID {
-		writeFalVideoServiceError(c, service.ErrFalVideoNotFound, "")
+		writeVideoTaskServiceError(c, service.ErrVideoTaskNotFound, "")
 		return
 	}
 	if !service.GroupAllowsImageGeneration(key.Group) {
-		falVideoError(c, http.StatusForbidden, "permission_error", "", service.ImageGenerationPermissionMessage(), "")
+		videoTaskError(c, http.StatusForbidden, "permission_error", "", service.ImageGenerationPermissionMessage(), "")
 		return
 	}
 	if strings.HasPrefix(mediaType, "multipart/") {
-		falVideoError(c, http.StatusBadRequest, "invalid_request_error", "", "Send a JSON video generation request", "")
+		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "", "Send a JSON video generation request", "")
 		return
 	}
-	req, err := parseFalVideoRequest(body)
+	req, err := parseVideoTaskRequest(body)
 	if err != nil {
-		falVideoError(c, http.StatusBadRequest, "invalid_request_error", "", err.Error(), "")
+		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "", err.Error(), "")
 		return
 	}
 	subscription, _ := middleware.GetSubscriptionFromContext(c)
 	if subscription != nil || key.Group.IsSubscriptionType() {
-		falVideoError(c, http.StatusBadRequest, "invalid_request_error", "", "Video generation requires a balance-billed group", "")
+		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "", "Video generation requires a balance-billed group", "")
 		return
 	}
 	req.Model, req.UserID, req.APIKeyID, req.GroupID = model, subject.UserID, key.ID, *key.GroupID
 	req.APIKey, req.RoutingModel = key, routingModel
 	if values := c.Request.Header.Values("Idempotency-Key"); len(values) > 1 {
-		falVideoError(c, http.StatusBadRequest, "invalid_request_error", "", "Send only one Idempotency-Key header", "")
+		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "", "Send only one Idempotency-Key header", "")
 		return
 	}
 	req.IdempotencyKey = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	setOpsRequestContext(c, model, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 	if h.gateway != nil {
-		reqLog := requestLogger(c, "handler.fal_video.create", zap.Int64("user_id", subject.UserID), zap.Int64("api_key_id", key.ID), zap.String("model", model))
-		moderation := service.GrokMediaRequestInfo{Prompt: req.Prompt}
+		reqLog := requestLogger(c, "handler.video_task.create", zap.Int64("user_id", subject.UserID), zap.Int64("api_key_id", key.ID), zap.String("model", model))
+		moderation := service.OpenAIImagesRequest{Prompt: req.Prompt}
 		if req.ImageURL != "" {
 			moderation.InputImageURLs = []string{req.ImageURL}
 		}
@@ -146,7 +151,7 @@ func (h *FalVideoHandler) create(c *gin.Context, key *service.APIKey, subject mi
 		}
 		billing := h.gateway.billingCacheService
 		if billing == nil || key.User == nil || h.gateway.concurrencyHelper == nil {
-			writeFalVideoServiceError(c, service.ErrFalVideoTemporarilyUnavailable, "")
+			writeVideoTaskServiceError(c, service.ErrVideoTaskTemporarilyUnavailable, "")
 			return
 		}
 		streamStarted := false
@@ -175,21 +180,21 @@ func (h *FalVideoHandler) create(c *gin.Context, key *service.APIKey, subject mi
 		}
 	}
 
-	task, err := h.tasks.Submit(c.Request.Context(), req)
+	task, err := h.tasks.Submit(c.Request.Context(), provider, req)
 	if err != nil {
-		writeFalVideoServiceError(c, err, task.ID)
+		writeVideoTaskServiceError(c, err, task.ID)
 		return
 	}
-	writeFalVideoAcknowledgment(c, task.ID)
+	writeVideoTaskAcknowledgment(c, task.ID)
 }
 
-func writeFalVideoAcknowledgment(c *gin.Context, id string) {
+func writeVideoTaskAcknowledgment(c *gin.Context, id string) {
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{"request_id": id})
 }
 
-func parseFalVideoRequest(body []byte) (service.FalVideoRequest, error) {
-	var req service.FalVideoRequest
+func parseVideoTaskRequest(body []byte) (service.VideoTaskRequest, error) {
+	var req service.VideoTaskRequest
 	var fields map[string]json.RawMessage
 	if !utf8.Valid(body) || json.Unmarshal(body, &fields) != nil || fields == nil {
 		return req, errors.New("Send a valid UTF-8 JSON object")
@@ -231,7 +236,7 @@ func parseFalVideoRequest(body []byte) (service.FalVideoRequest, error) {
 		return req, errors.New("duration must be a positive integer")
 	}
 	if image != nil {
-		rawURL := strings.TrimSpace(falVideoImageURL(image))
+		rawURL := strings.TrimSpace(videoTaskImageURL(image))
 		u, err := url.Parse(rawURL)
 		if err != nil || len(rawURL) > 8192 || u.Scheme != "https" || u.Hostname() == "" || u.User != nil ||
 			strings.ContainsAny(rawURL, " \\#") || (u.Port() != "" && u.Port() != "443") ||
@@ -243,7 +248,7 @@ func parseFalVideoRequest(body []byte) (service.FalVideoRequest, error) {
 	return req, nil
 }
 
-func falVideoImageURL(raw json.RawMessage) string {
+func videoTaskImageURL(raw json.RawMessage) string {
 	var imageURL string
 	if json.Unmarshal(raw, &imageURL) == nil {
 		return imageURL
@@ -281,48 +286,48 @@ func falVideoImageURL(raw json.RawMessage) string {
 	return ""
 }
 
-func falVideoIdentity(c *gin.Context) (*service.APIKey, middleware.AuthSubject, bool) {
+func videoTaskIdentity(c *gin.Context) (*service.APIKey, middleware.AuthSubject, bool) {
 	key, _ := middleware.GetAPIKeyFromContext(c)
 	subject, found := middleware.GetAuthSubjectFromContext(c)
 	if key == nil || key.ID <= 0 || !found || subject.UserID <= 0 || (key.UserID > 0 && key.UserID != subject.UserID) {
-		falVideoError(c, http.StatusUnauthorized, "authentication_error", "", "Invalid API key", "")
+		videoTaskError(c, http.StatusUnauthorized, "authentication_error", "", "Invalid API key", "")
 		return nil, subject, false
 	}
 	if key.GroupID == nil || *key.GroupID <= 0 {
-		writeFalVideoServiceError(c, service.ErrFalVideoNotFound, "")
+		writeVideoTaskServiceError(c, service.ErrVideoTaskNotFound, "")
 		return nil, subject, false
 	}
 	return key, subject, true
 }
 
-func (h *FalVideoHandler) lookup(c *gin.Context) (falvideotask.Task, bool) {
-	key, subject, ok := falVideoIdentity(c)
+func (h *VideoTaskHandler) lookup(c *gin.Context) (videotask.Task, bool) {
+	key, subject, ok := videoTaskIdentity(c)
 	if !ok {
-		return falvideotask.Task{}, false
+		return videotask.Task{}, false
 	}
 	id := strings.TrimSpace(c.Param("request_id"))
 	if id == "" {
-		falVideoError(c, http.StatusBadRequest, "invalid_request_error", "", "request_id is required", "")
-		return falvideotask.Task{}, false
+		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "", "request_id is required", "")
+		return videotask.Task{}, false
 	}
-	if !service.IsFalVideoTaskID(id) {
-		writeFalVideoServiceError(c, service.ErrFalVideoNotFound, "")
-		return falvideotask.Task{}, false
+	if !videotask.IsID(id) {
+		writeVideoTaskServiceError(c, service.ErrVideoTaskNotFound, "")
+		return videotask.Task{}, false
 	}
 	if h == nil || h.tasks == nil {
-		writeFalVideoServiceError(c, service.ErrFalVideoTemporarilyUnavailable, "")
-		return falvideotask.Task{}, false
+		writeVideoTaskServiceError(c, service.ErrVideoTaskTemporarilyUnavailable, "")
+		return videotask.Task{}, false
 	}
 	task, err := h.tasks.Get(c.Request.Context(), id, subject.UserID, key.ID, *key.GroupID)
 	if err != nil {
-		writeFalVideoServiceError(c, err, "")
-		return falvideotask.Task{}, false
+		writeVideoTaskServiceError(c, err, "")
+		return videotask.Task{}, false
 	}
 	setOpsRequestContext(c, task.Model, false)
 	return task, true
 }
 
-func (h *FalVideoHandler) Status(c *gin.Context) {
+func (h *VideoTaskHandler) Status(c *gin.Context) {
 	task, ok := h.lookup(c)
 	if !ok {
 		return
@@ -354,19 +359,19 @@ func (h *FalVideoHandler) Status(c *gin.Context) {
 		response["error"] = gin.H{"code": firstNonEmptyString(task.ErrorCode, "generation_failed"), "message": "Video generation failed"}
 	case "unknown":
 		response["status"] = "failed"
-		response["error"] = gin.H{"code": "submission_unknown", "message": service.ErrFalVideoSubmissionUnknown.Error()}
+		response["error"] = gin.H{"code": "submission_unknown", "message": service.ErrVideoTaskSubmissionUnknown.Error()}
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *FalVideoHandler) Content(c *gin.Context) {
+func (h *VideoTaskHandler) Content(c *gin.Context) {
 	task, ok := h.lookup(c)
 	if !ok {
 		return
 	}
 	if task.State != "succeeded" {
-		falVideoError(c, http.StatusConflict, "invalid_request_error", "video_not_ready", "Video content is not available", "")
+		videoTaskError(c, http.StatusConflict, "invalid_request_error", "video_not_ready", "Video content is not available", "")
 		return
 	}
 	resp, err := h.tasks.OpenContent(c.Request.Context(), task, strings.TrimSpace(c.GetHeader("Range")))
@@ -374,16 +379,16 @@ func (h *FalVideoHandler) Content(c *gin.Context) {
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		writeFalVideoServiceError(c, err, "")
+		writeVideoTaskServiceError(c, err, "")
 		return
 	}
 	if resp == nil || resp.Body == nil {
-		writeFalVideoServiceError(c, service.ErrFalVideoUpstream, "")
+		writeVideoTaskServiceError(c, service.ErrVideoTaskUpstream, "")
 		return
 	}
 	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
-		copyFalVideoRangeHeaders(c, resp)
-		falVideoError(c, resp.StatusCode, "invalid_request_error", "range_not_satisfiable", "Requested video range is not satisfiable", "")
+		copyVideoTaskRangeHeaders(c, resp)
+		videoTaskError(c, resp.StatusCode, "invalid_request_error", "range_not_satisfiable", "Requested video range is not satisfiable", "")
 		return
 	}
 	contentType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
@@ -393,11 +398,11 @@ func (h *FalVideoHandler) Content(c *gin.Context) {
 	if (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent) || err != nil ||
 		!(strings.HasPrefix(contentType, "video/") || contentType == "application/octet-stream" ||
 			(resp.StatusCode == http.StatusPartialContent && contentType == "multipart/byteranges" && params["boundary"] != "")) {
-		writeFalVideoServiceError(c, service.ErrFalVideoUpstream, "")
+		writeVideoTaskServiceError(c, service.ErrVideoTaskUpstream, "")
 		return
 	}
 
-	copyFalVideoRangeHeaders(c, resp)
+	copyVideoTaskRangeHeaders(c, resp)
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Type", mime.FormatMediaType(contentType, params))
@@ -408,11 +413,11 @@ func (h *FalVideoHandler) Content(c *gin.Context) {
 	service.MarkResponseCommitted(c)
 	c.Writer.WriteHeaderNow()
 	if _, err := io.Copy(c.Writer, resp.Body); err != nil && c.Request.Context().Err() == nil {
-		requestLogger(c, "handler.fal_video.content").Warn("fal_video.content_stream_failed", zap.String("request_id", task.ID))
+		requestLogger(c, "handler.video_task.content").Warn("video_task.content_stream_failed", zap.String("request_id", task.ID))
 	}
 }
 
-func copyFalVideoRangeHeaders(c *gin.Context, resp *http.Response) {
+func copyVideoTaskRangeHeaders(c *gin.Context, resp *http.Response) {
 	for _, name := range []string{"Accept-Ranges", "Content-Range"} {
 		if value := resp.Header.Get(name); value != "" {
 			c.Header(name, value)
@@ -420,32 +425,32 @@ func copyFalVideoRangeHeaders(c *gin.Context, resp *http.Response) {
 	}
 }
 
-func writeFalVideoServiceError(c *gin.Context, err error, id string) {
+func writeVideoTaskServiceError(c *gin.Context, err error, id string) {
 	switch {
-	case errors.Is(err, service.ErrFalVideoInvalid):
-		falVideoError(c, http.StatusBadRequest, "invalid_request_error", "", service.ErrFalVideoInvalid.Error(), "")
-	case errors.Is(err, service.ErrFalVideoNotFound):
-		falVideoError(c, http.StatusNotFound, "not_found_error", "", "Video request not found", "")
-	case errors.Is(err, service.ErrFalVideoConflict):
-		falVideoError(c, http.StatusConflict, "invalid_request_error", "idempotency_conflict", service.ErrFalVideoConflict.Error(), "")
-	case errors.Is(err, service.ErrFalVideoSubmitting):
-		falVideoError(c, http.StatusConflict, "api_error", "submission_in_progress", service.ErrFalVideoSubmitting.Error(), id)
-	case errors.Is(err, service.ErrFalVideoInsufficientBalance):
-		falVideoError(c, http.StatusForbidden, "billing_error", "insufficient_balance", service.ErrFalVideoInsufficientBalance.Error(), "")
-	case errors.Is(err, service.ErrFalVideoKeyLimit):
-		falVideoError(c, http.StatusTooManyRequests, "rate_limit_error", "rate_limit_exceeded", service.ErrFalVideoKeyLimit.Error(), "")
-	case errors.Is(err, service.ErrFalVideoSubmissionUnknown):
-		falVideoError(c, http.StatusBadGateway, "upstream_error", "submission_unknown", service.ErrFalVideoSubmissionUnknown.Error(), id)
-	case errors.Is(err, service.ErrFalVideoUpstream):
-		falVideoError(c, http.StatusBadGateway, "upstream_error", "", "Video provider request failed", "")
-	case errors.Is(err, service.ErrFalVideoTemporarilyUnavailable):
-		falVideoError(c, http.StatusServiceUnavailable, "api_error", "", "Video generation is temporarily unavailable", "")
+	case errors.Is(err, service.ErrVideoTaskInvalid):
+		videoTaskError(c, http.StatusBadRequest, "invalid_request_error", "", service.ErrVideoTaskInvalid.Error(), "")
+	case errors.Is(err, service.ErrVideoTaskNotFound):
+		videoTaskError(c, http.StatusNotFound, "not_found_error", "", "Video request not found", "")
+	case errors.Is(err, service.ErrVideoTaskConflict):
+		videoTaskError(c, http.StatusConflict, "invalid_request_error", "idempotency_conflict", service.ErrVideoTaskConflict.Error(), "")
+	case errors.Is(err, service.ErrVideoTaskSubmitting):
+		videoTaskError(c, http.StatusConflict, "api_error", "submission_in_progress", service.ErrVideoTaskSubmitting.Error(), id)
+	case errors.Is(err, service.ErrVideoTaskInsufficientBalance):
+		videoTaskError(c, http.StatusForbidden, "billing_error", "insufficient_balance", service.ErrVideoTaskInsufficientBalance.Error(), "")
+	case errors.Is(err, service.ErrVideoTaskKeyLimit):
+		videoTaskError(c, http.StatusTooManyRequests, "rate_limit_error", "rate_limit_exceeded", service.ErrVideoTaskKeyLimit.Error(), "")
+	case errors.Is(err, service.ErrVideoTaskSubmissionUnknown):
+		videoTaskError(c, http.StatusBadGateway, "upstream_error", "submission_unknown", service.ErrVideoTaskSubmissionUnknown.Error(), id)
+	case errors.Is(err, service.ErrVideoTaskUpstream):
+		videoTaskError(c, http.StatusBadGateway, "upstream_error", "", "Video provider request failed", "")
+	case errors.Is(err, service.ErrVideoTaskTemporarilyUnavailable):
+		videoTaskError(c, http.StatusServiceUnavailable, "api_error", "", "Video generation is temporarily unavailable", "")
 	default:
-		falVideoError(c, http.StatusInternalServerError, "api_error", "", "Video request failed", "")
+		videoTaskError(c, http.StatusInternalServerError, "api_error", "", "Video request failed", "")
 	}
 }
 
-func falVideoError(c *gin.Context, status int, errorType, code, message, id string) {
+func videoTaskError(c *gin.Context, status int, errorType, code, message, id string) {
 	payload := gin.H{"type": errorType, "message": message}
 	if code != "" {
 		payload["code"] = code

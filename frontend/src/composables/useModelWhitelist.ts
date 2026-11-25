@@ -297,6 +297,8 @@ const perplexityModels = [
   'llama-3-sonar-small-32k-chat', 'llama-3-sonar-large-32k-chat'
 ]
 
+const falVideoModels = ['xai/grok-imagine-video/v1.5']
+
 // 所有模型（去重）
 const allModelsList: string[] = Array.from(new Set([
   ...openaiModels,
@@ -309,6 +311,7 @@ const allModelsList: string[] = Array.from(new Set([
   ...mistralModels,
   ...metaModels,
   ...xaiModels,
+  ...falVideoModels,
   ...cohereModels,
   ...yiModels,
   ...moonshotModels,
@@ -532,6 +535,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'meta': return metaModels
     case 'xai':
     case 'grok': return xaiModels
+    case 'fal': return falVideoModels
     case 'cohere': return cohereModels
     case 'yi': return yiModels
     case 'moonshot':
@@ -564,6 +568,7 @@ export function getModelsByPlatform(platform: string): string[] {
 
 // 按平台获取预设映射
 export function getPresetMappingsByPlatform(platform: string) {
+  if (platform === 'fal') return []
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'grok' || platform === 'xai') return grokPresetMappings

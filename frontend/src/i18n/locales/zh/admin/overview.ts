@@ -1092,7 +1092,10 @@ export default {
         description:
           '配置 Grok 视频生成的每秒单价（USD/秒），留空则使用默认每秒价（grok-imagine-video：480p $0.05/s、720p $0.07/s；video-1.5：480p $0.08/s、720p $0.14/s、1080p $0.25/s）',
         modelOverridesTitle: '按模型覆盖视频价格',
-        modelOverridesDescription: '已填写的单元格会覆盖该模型族的平面分辨率价格。video-1.5 的 preview 与 legacy 别名共用同一模型族；留空则回退到平面分辨率价格。',
+        endpointId: '上游视频端点 ID',
+        addEndpoint: '添加端点价格',
+        invalidEndpoint: '请输入上游端点 ID，而不是 URL。',
+        modelOverridesDescription: 'Grok 模型族留空时回退到分辨率通用价。新的 fal 模型必须为具体上游端点和分辨率填写正数价格（USD/秒），不会回退。',
         independentMultiplier: '视频倍率独立',
         videoMultiplier: '视频独立倍率',
         modeHint:

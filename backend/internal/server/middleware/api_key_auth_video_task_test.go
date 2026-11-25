@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFalVideoReadAuth(t *testing.T) {
+func TestVideoTaskReadAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	const id = "falvid_a7306d24-992c-449e-9ec2-d29f71db8639"
+	const id = "vidtask_a7306d24-992c-449e-9ec2-d29f71db8639"
 	past := time.Now().Add(-time.Hour)
 	for _, tt := range []struct {
 		name, route, path, status string
@@ -48,7 +48,7 @@ func TestFalVideoReadAuth(t *testing.T) {
 	}
 }
 
-func TestFalVideoReplayAuthDefersOnlySpendingDenial(t *testing.T) {
+func TestVideoTaskReplayAuthDefersOnlySpendingDenial(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tt := range []struct {
 		name, status, idempotency string
@@ -70,7 +70,7 @@ func TestFalVideoReplayAuthDefersOnlySpendingDenial(t *testing.T) {
 			keys := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
 			r := gin.New()
 			r.POST("/v1/videos/generations", gin.HandlerFunc(NewAPIKeyAuthMiddleware(keys, nil, cfg)), func(c *gin.Context) {
-				if !tt.replay && RejectFalVideoSpendingDenial(c) {
+				if !tt.replay && RejectVideoTaskSpendingDenial(c) {
 					return
 				}
 				c.Status(http.StatusNoContent)
