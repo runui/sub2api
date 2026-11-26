@@ -1532,7 +1532,20 @@ export interface GrokBillingSummary {
   failed_windows?: string[]
 }
 
+export interface FalUsageTotal {
+  currency: string
+  cost_total: string
+}
+
+export interface FalUsageSummary {
+  start: string
+  end: string
+  totals: FalUsageTotal[]
+  details: (FalUsageTotal & { endpoint_id: string; unit: string; quantity: string })[]
+}
+
 export interface AccountUsageInfo {
+  fal_usage?: FalUsageSummary
   source?: 'passive' | 'active'
   updated_at: string | null
   five_hour: UsageProgress | null

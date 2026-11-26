@@ -1768,6 +1768,9 @@ export default {
         noData: 'No usage data available for this account'
       },
       usageWindow: {
+        falWorkspaceCost: 'fal workspace · 7-day estimated cost',
+        falWorkspaceScope: 'fal upstream model spend across the workspace, not a remaining balance or this key’s spend.',
+        falWorkspaceEmpty: 'No billable usage',
         statsTitle: '5-Hour Window Usage Statistics',
         statsTitleDaily: 'Daily Usage Statistics',
         geminiProDaily: 'Pro',

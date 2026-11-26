@@ -1,8 +1,8 @@
 /**
  * Usage request scheduler.
  *
- * All platforms execute immediately without queuing — the backend uses
- * passive sampling so upstream 429 rate-limit errors are no longer a concern.
+ * Requests execute immediately here. The account list batches desktop queries;
+ * the backend decides whether to use passive data or query the provider.
  */
 
 import type { Account } from '@/types'

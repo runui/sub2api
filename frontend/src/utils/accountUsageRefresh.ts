@@ -72,6 +72,8 @@ export const buildGrokUsageRefreshKey = (account: Pick<Account, 'platform' | 'ex
 
 export const buildAccountUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'session_window_start' | 'session_window_end' | 'session_window_status' | 'credentials' | 'extra'>): string => {
   if (account.platform === 'openai') return buildOpenAIUsageRefreshKey(account)
+  // Credential edits update the account revision; never use the secret in a browser cache key.
+  if (account.platform === 'fal') return serializeSnapshotRefreshValue([account.id, account.updated_at])
 
   const isClaude = account.platform === 'anthropic' && (account.type === 'oauth' || account.type === 'setup-token')
   if (!isClaude && account.platform !== 'gemini') return ''

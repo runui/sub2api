@@ -143,6 +143,8 @@ type UsageCache struct {
 	antigravityFlight singleflight.Group // 防止同一 Antigravity 账号的并发请求击穿缓存
 	openAIProbeCache  sync.Map           // accountID -> time.Time
 	grokProbeCache    sync.Map           // accountID -> last billing probe attempt
+	falUsageCache     sync.Map           // accountID -> falUsageCacheEntry
+	falUsageFlight    singleflight.Group
 }
 
 // NewUsageCache 创建 UsageCache 实例
@@ -254,6 +256,7 @@ type UsageInfo struct {
 	// ThirtyDay is the official monthly billing window (used/monthlyLimit %).
 	ThirtyDay   *UsageProgress      `json:"thirty_day,omitempty"`
 	GrokBilling *xai.BillingSummary `json:"grok_billing,omitempty"`
+	FalUsage    *FalUsageSummary    `json:"fal_usage,omitempty"`
 
 	// Antigravity 账号级信息
 	SubscriptionTier    string `json:"subscription_tier,omitempty"`     // 归一化订阅等级: FREE/PRO/ULTRA/UNKNOWN
@@ -350,6 +353,7 @@ type AccountUsageService struct {
 	grokQuotaFetcher        *GrokQuotaFetcher
 	grokQuotaService        *GrokQuotaService
 	openAIQuotaService      *OpenAIQuotaService
+	falUsageUpstream        HTTPUpstream
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
@@ -406,6 +410,13 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 		return nil, fmt.Errorf("account is required")
 	}
 	accountID := account.ID
+	if account.Platform == PlatformFal && account.Type == AccountTypeAPIKey {
+		// Account access does not grant access to spend from other keys in the fal workspace.
+		if adminaccess.RestrictedFromContext(ctx) != nil {
+			return nil, falWorkspaceUsageDenied()
+		}
+		return s.getFalUsage(ctx, account, forceProbe)
+	}
 
 	// Dedicated UI load-test accounts must remain fully interactive without ever
 	// contacting Anthropic with synthetic credentials. Reuse the same persisted
@@ -541,14 +552,14 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 		return usage, nil
 	}
 
-	// API Key账号不支持usage查询
+	// 未提供平台适配的 API Key 账号不支持 usage 查询。
 	return nil, fmt.Errorf("account type %s does not support usage query", account.Type)
 }
 
 // GetUsage 获取账号使用量
 // OAuth账号: 调用Anthropic API获取真实数据（需要profile scope），API响应缓存10分钟，窗口统计缓存1分钟
 // Setup Token账号: 返回响应头采样的5h/7d窗口；无5h采样时回退到session_window估算
-// API Key账号: 不支持usage查询
+// API Key账号: 仅支持有独立用量适配的平台（如 fal）。
 func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, force ...bool) (*UsageInfo, error) {
 	forceProbe := len(force) > 0 && force[0]
 

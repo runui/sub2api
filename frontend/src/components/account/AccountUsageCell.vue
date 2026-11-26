@@ -685,11 +685,19 @@
   </div>
 
   <!-- Non-OAuth/Setup-Token accounts -->
-  <div ref="rootRef" v-else>
+  <div ref="rootRef" v-else :aria-busy="isFalApiKey && loading">
     <!-- Gemini API Key accounts: show quota info -->
     <AccountQuotaInfo v-if="account.platform === 'gemini' && !isGeminiThirdPartyApiKey" :account="account" />
     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
     <div v-else class="space-y-1">
+      <div v-if="isFalApiKey" class="truncate text-[10px] text-gray-500 dark:text-gray-400" data-test="fal-usage">
+        <div v-if="loading" class="h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+        <span v-else-if="error" class="text-red-600 dark:text-red-400" :title="error">{{ error }}</span>
+        <span v-else-if="usageInfo?.fal_usage" :title="t('admin.accounts.usageWindow.falWorkspaceScope')">
+          {{ t('admin.accounts.usageWindow.falWorkspaceCost') }}:
+          {{ usageInfo.fal_usage.totals.map(falUsageAmount).join(' · ') || t('admin.accounts.usageWindow.falWorkspaceEmpty') }}
+        </span>
+      </div>
       <OllamaCloudUsageCell
         v-if="account.ollama_cloud_usage?.eligible"
         :account="account"
@@ -872,7 +880,11 @@ const showUsageWindows = computed(() => {
   return props.account.type === 'oauth' || props.account.type === 'setup-token'
 })
 
+const isFalApiKey = computed(() => props.account.platform === 'fal' && props.account.type === 'apikey')
+const falUsageAmount = (amount: { currency: string; cost_total: string }) => `${amount.currency} ${amount.cost_total}`
+
 const shouldFetchUsage = computed(() => {
+  if (isFalApiKey.value) return true
   if (props.account.platform === 'anthropic') {
     return props.account.type === 'oauth' || props.account.type === 'setup-token'
   }
@@ -1565,6 +1577,7 @@ const syncManagedUsageState = () => {
   loading.value = props.batchedUsageLoading === true
 }
 
+let falUsageRequest = 0
 const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?: boolean }) => {
   if (!shouldFetchUsage.value) return
   if (isBatchManaged.value) {
@@ -1585,23 +1598,27 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
   loading.value = true
   error.value = null
   const refreshKey = usageRefreshKey.value
+  const requestID = isFalApiKey.value ? ++falUsageRequest : undefined
+  // A result started before a refresh or credential edit must not replace the new workspace data.
+  const isCurrent = () => !unmounted.value && (requestID === undefined ||
+    (requestID === falUsageRequest && refreshKey === usageRefreshKey.value))
 
   try {
-		const fetchFn = () => options?.source
-			? adminAPI.accounts.getUsage(props.account.id, options.source, options.bypassCache === true)
-			: adminAPI.accounts.getUsage(props.account.id)
+    const fetchFn = () => options?.source || (requestID !== undefined && options?.bypassCache)
+      ? adminAPI.accounts.getUsage(props.account.id, options?.source ?? 'active', options?.bypassCache === true)
+      : adminAPI.accounts.getUsage(props.account.id)
     const result = await enqueueUsageRequest(props.account, fetchFn)
-    if (!unmounted.value) {
+    if (isCurrent()) {
       usageInfo.value = result
       _usageCache.set(props.account.id, { data: result, ts: Date.now(), refreshKey })
     }
   } catch (e: any) {
-    if (!unmounted.value) {
-      error.value = t('common.error')
+    if (isCurrent()) {
+      error.value = requestID !== undefined && typeof e?.message === 'string' ? e.message : t('common.error')
       console.error('Failed to load usage:', e)
     }
   } finally {
-    if (!unmounted.value) loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
@@ -1842,6 +1859,7 @@ watch(usageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (!shouldFetchUsage.value) return
 
+  if (isFalApiKey.value) usageInfo.value = null
   if (isBatchManaged.value) {
     requestParentBatchUsage(props.account.platform === 'openai' ? { force: true } : undefined)
     return

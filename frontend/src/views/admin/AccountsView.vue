@@ -784,6 +784,7 @@ const accountSupportsBatchUsage = (account: Account) => {
   if (account.platform === 'antigravity') return account.type === 'oauth'
   if (account.platform === 'openai') return account.type === 'oauth'
   if (account.platform === 'grok') return account.type === 'oauth'
+  if (account.platform === 'fal') return account.type === 'apikey'
   return false
 }
 
@@ -891,6 +892,7 @@ const queueBatchedUsage = (account: Account, options?: { force?: boolean }) => {
     }
   }
 
+  if (account.platform === 'fal') setUsageBatchState(cacheKey, null, null)
   usageBatchErrorByAccountId.value = {
     ...usageBatchErrorByAccountId.value,
     [key]: null

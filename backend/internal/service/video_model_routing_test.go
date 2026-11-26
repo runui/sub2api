@@ -55,6 +55,34 @@ func TestVideoModelRoutingDoesNotGuessProvider(t *testing.T) {
 	require.False(t, decision.Matched)
 }
 
+func TestVideoModelCatalogUsesGroupVideoRoutesAndAllowlist(t *testing.T) {
+	fal := Account{Platform: PlatformFal, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"api_key": "test-key", "model_mapping": map[string]any{
+			"fal-video": falVideoUpstreamModel, "shared": falVideoVeo31, "unsupported-fal": "fal-ai/not-registered",
+		},
+	}}
+	grok := Account{Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"model_mapping": map[string]any{"grok-video": "grok-imagine-video", "text": "grok-4", "shared": "grok-imagine-video"},
+	}}
+	routes := []CompositeModelRoute{
+		{PublicModel: "public", UpstreamModel: "fal-video", TargetPlatform: PlatformFal, Endpoint: CompositeRouteEndpointVideos, MatchType: CompositeRouteMatchExact, Enabled: true},
+		{PublicModel: "alias-", UpstreamModel: "grok-video", TargetPlatform: PlatformGrok, Endpoint: CompositeRouteEndpointVideos, MatchType: CompositeRouteMatchPrefix, Enabled: true},
+		{PublicModel: "missing", UpstreamModel: "unsupported-fal", TargetPlatform: PlatformFal, Endpoint: CompositeRouteEndpointVideos, MatchType: CompositeRouteMatchExact, Enabled: true},
+		{PublicModel: "text-route", UpstreamModel: "grok-video", TargetPlatform: PlatformGrok, Endpoint: CompositeRouteEndpointAny, MatchType: CompositeRouteMatchExact, Enabled: true},
+	}
+	accounts := []Account{fal, grok}
+	group := &Group{ID: 1, Platform: PlatformComposite, AllowVideoGeneration: true}
+	require.Equal(t, []string{"fal-video", "grok-video", "public"}, listVideoModelIDs(group, accounts, routes))
+	group.ModelAllowlist = GroupModelAllowlist{Enabled: true, Models: []string{"alias-video", "public", "text", "shared"}}
+	require.Equal(t, []string{"alias-video", "public"}, listVideoModelIDs(group, accounts, routes))
+	group.SubscriptionType = SubscriptionTypeSubscription
+	require.Equal(t, []string{"alias-video"}, listVideoModelIDs(group, accounts, routes))
+	group.AllowVideoGeneration = false
+	ids, err := (*GatewayService)(nil).ListVideoModels(context.Background(), group)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+}
+
 func TestVideoModelRoutingRegisteredFalAndGrokAliasIsAmbiguous(t *testing.T) {
 	const model = "shared-video"
 	grok := Account{Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{

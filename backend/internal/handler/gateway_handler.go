@@ -1174,12 +1174,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 
+	var group *service.Group
 	var groupID *int64
 	var platform string
 
 	if apiKey != nil && apiKey.Group != nil {
-		groupID = &apiKey.Group.ID
-		platform = apiKey.Group.Platform
+		group = apiKey.Group
+		groupID = &group.ID
+		platform = group.Platform
 	}
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
@@ -1191,31 +1193,35 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		return
 	}
 
+	var videoModels []string
+	if group != nil && platform == group.Platform {
+		// A video catalog lookup failure must not break existing model discovery.
+		videoModels, _ = h.gatewayService.ListVideoModels(c.Request.Context(), group)
+	}
+	withVideo := func(ids []string) []string {
+		if len(videoModels) == 0 {
+			return ids
+		}
+		return mergeModelIDs(ids, videoModels)
+	}
+
 	if platform == service.PlatformComposite {
 		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID, "", true)
-		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
-			source := availableModels
-			if len(source) == 0 {
-				source = defaultModelIDsForPlatform(service.PlatformComposite)
-			}
-			writeAllowlistedModelsList(c, service.PlatformComposite, apiKey.Group.ModelAllowlist.FilterForListing(source))
+		if len(availableModels) == 0 {
+			availableModels = defaultModelIDsForPlatform(platform)
+		}
+		availableModels = withVideo(availableModels)
+		if group.ModelAllowlistEnabled() {
+			writeAllowlistedModelsList(c, platform, group.ModelAllowlist.FilterForListing(availableModels))
 			return
 		}
-		if len(availableModels) > 0 {
-			writeModelsList(c, service.PlatformComposite, availableModels)
-			return
-		}
-		writeModelsList(c, service.PlatformComposite, defaultModelIDsForPlatform(service.PlatformComposite))
+		writeModelsList(c, platform, availableModels)
 		return
 	}
 
 	// Get available models from account configurations for the selected group platform.
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 	if platform == service.PlatformAnthropic {
-		var group *service.Group
-		if apiKey != nil {
-			group = apiKey.Group
-		}
 		source := availableModels
 		if group != nil && group.ModelAllowlistEnabled() {
 			source = modelListingSource(platform, availableModels, defaultModelIDsForPlatform(platform))
@@ -1227,37 +1233,60 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 			availableModels = expanded
 		}
 	}
-	if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
+	if group.ModelAllowlistEnabled() {
 		source := modelListingSource(platform, availableModels, defaultModelIDsForPlatform(platform))
-		writeAllowlistedModelsList(c, platform, apiKey.Group.ModelAllowlist.FilterForListing(source))
+		writeAllowlistedModelsList(c, platform, group.ModelAllowlist.FilterForListing(withVideo(source)))
 		return
 	}
 
 	if len(availableModels) > 0 || (platform == service.PlatformOpenAI && availableModels != nil) {
-		writeModelsList(c, platform, availableModels)
+		writeModelsList(c, platform, withVideo(availableModels))
 		return
 	}
 
 	// Fallback to default models
 	if platform == service.PlatformOpenAI {
+		if len(videoModels) > 0 {
+			writeOpenAIModelsList(c, withVideo(openai.DefaultModelIDs()))
+			return
+		}
 		writeModelsListResponse(c, openai.DefaultModels)
 		return
 	}
 
 	if platform == service.PlatformGemini {
-		writeModelsListResponse(c, geminicli.DefaultModels)
+		writeModelsListWithExtraIDs(c, geminicli.DefaultModels, videoModels, func(model geminicli.Model) string { return model.ID })
 		return
 	}
 	if platform == service.PlatformGrok {
-		writeGrokModelsList(c, xai.DefaultModelIDs())
+		writeGrokModelsList(c, withVideo(xai.DefaultModelIDs()))
 		return
 	}
 	if platform == service.PlatformTypeSafe {
-		writeModelsList(c, platform, []string{typesafe.JevLatestModel})
+		writeModelsList(c, platform, withVideo([]string{typesafe.JevLatestModel}))
 		return
 	}
 
-	writeModelsListResponse(c, claude.DefaultModels)
+	writeModelsListWithExtraIDs(c, claude.DefaultModels, videoModels, func(model claude.Model) string { return model.ID })
+}
+
+func writeModelsListWithExtraIDs[T any](c *gin.Context, defaults []T, extra []string, modelID func(T) string) {
+	if len(extra) == 0 {
+		writeModelsListResponse(c, defaults)
+		return
+	}
+	seen := make(map[string]struct{}, len(defaults))
+	models := make([]any, 0, len(defaults)+len(extra))
+	for _, model := range defaults {
+		seen[modelID(model)] = struct{}{}
+		models = append(models, model)
+	}
+	for _, id := range extra {
+		if _, ok := seen[id]; !ok {
+			models = append(models, claude.Model{ID: id, Type: "model", DisplayName: id, CreatedAt: "2024-01-01T00:00:00Z"})
+		}
+	}
+	writeModelsListResponse(c, models)
 }
 
 // CodexModels returns the effective group model list using the manifest shape

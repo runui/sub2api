@@ -182,6 +182,38 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository, routeRepo ..
 	}
 }
 
+func TestGatewayModelsIncludesConfiguredVideoAliases(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const groupID int64 = 7890
+	accounts := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
+		groupID: {{ID: 1, Platform: service.PlatformFal, Type: service.AccountTypeAPIKey, Credentials: map[string]any{
+			"api_key": "test-key", "model_mapping": map[string]any{"my-motion-model": "fal-ai/veo3.1"},
+		}}},
+	}}
+	h := newGatewayModelsHandlerForTest(accounts)
+	for _, platform := range []string{service.PlatformComposite, service.PlatformOpenAI} {
+		t.Run(platform, func(t *testing.T) {
+			group := &service.Group{ID: groupID, Platform: platform, AllowVideoGeneration: true}
+			list := func() []string {
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+				c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{Group: group})
+				h.Models(c)
+				require.Equal(t, http.StatusOK, rec.Code)
+				var models gatewayModelsResponseForTest
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &models))
+				return modelIDsForTest(models.Data)
+			}
+			require.Subset(t, list(), []string{openai.DefaultModelIDs()[0], "my-motion-model"})
+			group.ModelAllowlist = service.GroupModelAllowlist{Enabled: true, Models: []string{"my-motion-model"}}
+			require.Equal(t, []string{"my-motion-model"}, list())
+			group.AllowVideoGeneration = false
+			require.Empty(t, list())
+		})
+	}
+}
+
 func TestGatewayCompositeRouteModelsAppearInBothCatalogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const groupID int64 = 7784

@@ -242,6 +242,7 @@ func ProvideAccountUsageService(
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
 	opsService *OpsService,
+	httpUpstream HTTPUpstream,
 ) *AccountUsageService {
 	service := NewAccountUsageService(
 		accountRepo,
@@ -260,6 +261,7 @@ func ProvideAccountUsageService(
 	if opsService != nil {
 		service.opsMonitoring = opsService
 	}
+	service.falUsageUpstream = httpUpstream
 	return service
 }
 

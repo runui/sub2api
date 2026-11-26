@@ -247,6 +247,54 @@ describe('AccountUsageCell', () => {
     })
   })
 
+  it('shows fal workspace cost alongside local stats and refreshes via the desktop batch', async () => {
+    const account = makeAccount({ id: 98400, platform: 'fal', type: 'apikey' })
+    const requestBatchedUsage = vi.fn()
+    const batchedUsage: AccountUsageInfo = {
+      updated_at: null, five_hour: null, seven_day: null, seven_day_sonnet: null,
+      fal_usage: { start: '', end: '', totals: [{ currency: 'USD', cost_total: '1.25' }], details: [] }
+    }
+    const wrapper = mount(AccountUsageCell, {
+      props: { account, requestBatchedUsage, batchedUsage, todayStats: { requests: 3, tokens: 0, cost: 0.5, standard_cost: 0.5 } }
+    })
+    expect(requestBatchedUsage).toHaveBeenCalledWith(account, undefined)
+    expect(wrapper.get('[data-test="fal-usage"]').text()).toContain('USD 1.25')
+    expect(wrapper.text()).toContain('3 req')
+    await wrapper.setProps({ manualRefreshToken: 1 })
+    expect(requestBatchedUsage).toHaveBeenLastCalledWith(account, { force: true })
+    await wrapper.setProps({ batchedUsage: null, batchedUsageError: 'Missing workspace usage permissions' })
+    expect(wrapper.get('[data-test="fal-usage"]').text()).toBe('Missing workspace usage permissions')
+    expect(getUsage).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('defers mobile fal usage until visible, renders empty usage and forwards force', async () => {
+    vi.mocked(window.matchMedia).mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList)
+    let notify: IntersectionObserverCallback = () => {}
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) { notify = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const account = makeAccount({ id: 98401, platform: 'fal', type: 'apikey' })
+    getUsage.mockResolvedValue({ fal_usage: { totals: [], details: [] } })
+    const wrapper = mount(AccountUsageCell, { props: { account } })
+    try {
+      await flushPromises()
+      expect(getUsage).not.toHaveBeenCalled()
+      notify([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+      await flushPromises()
+      expect(getUsage).toHaveBeenCalledWith(account.id)
+      expect(wrapper.get('[data-test="fal-usage"]').text()).toContain('falWorkspaceEmpty')
+      await wrapper.setProps({ manualRefreshToken: 1 })
+      await flushPromises()
+      expect(getUsage).toHaveBeenLastCalledWith(account.id, 'active', true)
+    } finally {
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('keeps cached Claude quota visible while a replacement batch is loading', async () => {
     const requestBatchedUsage = vi.fn()
     const wrapper = mount(AccountUsageCell, {
