@@ -1,4 +1,4 @@
-package handler_test
+package routes_test
 
 import (
 	"bufio"
@@ -159,7 +159,9 @@ func (f *emailOTPFixture) send(email string) string {
 	require.Equal(f.t, float64(300), data["expires_in"])
 	require.Equal(f.t, float64(60), data["retry_after"])
 	require.Len(f.t, data, 3)
-	return data["challenge_id"].(string)
+	id, ok := data["challenge_id"].(string)
+	require.True(f.t, ok)
+	return id
 }
 
 var emailOTPTestCodePattern = regexp.MustCompile(`>\s*([0-9]{6})\s*<`)
@@ -213,7 +215,9 @@ func TestEmailOTPAPILoginAndAutomaticRegistration(t *testing.T) {
 	f.clock.FastForward(service.EmailOTPResendCooldown)
 	id, code = f.challenge(email)
 	result = f.post("/verify", otpVerifyBody(strings.ToUpper(email), id, code), 200).Data
-	require.EqualValues(t, created.ID, result["user"].(map[string]any)["id"])
+	user, ok := result["user"].(map[string]any)
+	require.True(t, ok)
+	require.EqualValues(t, created.ID, user["id"])
 	count, err := f.db.User.Query().Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
@@ -232,19 +236,22 @@ func TestEmailOTPAPIInvitationRegistration(t *testing.T) {
 	require.Equal(t, true, result["requires_invitation"])
 	require.Equal(t, "INVITATION_CODE_INVALID", result["invitation_error"])
 	require.NotContains(t, result, "access_token")
-	grant := result["registration_token"].(string)
+	grant, ok := result["registration_token"].(string)
+	require.True(t, ok)
 	_, err = f.users.GetByEmail(ctx, email)
 	require.ErrorIs(t, err, service.ErrUserNotFound)
 	require.Equal(t, "INVITATION_CODE_INVALID", f.post("/complete-registration", fmt.Sprintf(`{"registration_token":%q,"invitation_code":"bad"}`, grant), 400).Reason)
 	body := fmt.Sprintf(`{"registration_token":%q,"invitation_code":"test-invite","email":"other@example.com"}`, grant)
 	result = f.post("/complete-registration", body, 200).Data
 	require.NotEmpty(t, result["access_token"])
-	require.Equal(t, email, result["user"].(map[string]any)["email"])
+	user, ok := result["user"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, email, user["email"])
 	require.Equal(t, "EMAIL_OTP_REGISTRATION_INVALID", f.post("/complete-registration", body, 400).Reason)
 	used, err := f.db.RedeemCode.Get(ctx, invitation.ID)
 	require.NoError(t, err)
 	require.Equal(t, service.StatusUsed, used.Status)
-	require.EqualValues(t, *used.UsedBy, result["user"].(map[string]any)["id"])
+	require.EqualValues(t, *used.UsedBy, user["id"])
 }
 
 func TestEmailOTPAPIRechecksRegistrationPolicy(t *testing.T) {
@@ -256,7 +263,8 @@ func TestEmailOTPAPIRechecksRegistrationPolicy(t *testing.T) {
 	f.setting(service.SettingKeyInvitationCodeEnabled, "true")
 	result := f.post("/verify", otpVerifyBody(email, id, code), 200).Data
 	require.Equal(t, true, result["requires_invitation"])
-	grant := result["registration_token"].(string)
+	grant, ok := result["registration_token"].(string)
+	require.True(t, ok)
 	body := fmt.Sprintf(`{"registration_token":%q,"invitation_code":"test-invite"}`, grant)
 	f.setting(service.SettingKeyRegistrationEnabled, "false")
 	f.post("/complete-registration", body, 403)
@@ -336,7 +344,9 @@ func TestEmailOTPAPIPreservesTOTPAndChecksRoleAgain(t *testing.T) {
 		data := f.post("/verify", otpVerifyBody(email, id, code), 200).Data
 		require.Equal(t, true, data["requires_2fa"])
 		require.NotContains(t, data, "access_token")
-		return data["temp_token"].(string)
+		token, ok := data["temp_token"].(string)
+		require.True(t, ok)
+		return token
 	}
 	finish := func(token string, status int) emailOTPFixtureResponse {
 		code, err := totp.GenerateCode(secret, time.Now())
@@ -407,7 +417,7 @@ func startEmailOTPSMTP(t *testing.T) (int, <-chan string) {
 				return
 			}
 			wg.Go(func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 				r := textproto.NewReader(bufio.NewReader(conn))
 				_, _ = io.WriteString(conn, "220 localhost ready\r\n")
@@ -455,5 +465,7 @@ func startEmailOTPSMTP(t *testing.T) (int, <-chan string) {
 		_ = listener.Close()
 		wg.Wait()
 	})
-	return listener.Addr().(*net.TCPAddr).Port, inbox
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+	return addr.Port, inbox
 }

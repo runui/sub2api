@@ -197,10 +197,10 @@ func parseVideoTaskRequest(body []byte) (service.VideoTaskRequest, error) {
 	var req service.VideoTaskRequest
 	var fields map[string]json.RawMessage
 	if !utf8.Valid(body) || json.Unmarshal(body, &fields) != nil || fields == nil {
-		return req, errors.New("Send a valid UTF-8 JSON object")
+		return req, errors.New("send a valid UTF-8 JSON object")
 	}
 	if _, conflict := requestmodel.ConflictingField("application/json", body); conflict {
-		return req, errors.New("Request body contains duplicate fields")
+		return req, errors.New("request body contains duplicate fields")
 	}
 	var image json.RawMessage
 	for field, value := range fields {
@@ -218,15 +218,15 @@ func parseVideoTaskRequest(body []byte) (service.VideoTaskRequest, error) {
 			dest = &req.AspectRatio
 		case "image", "image_url":
 			if image != nil {
-				return req, errors.New("Specify only one of image and image_url")
+				return req, errors.New("specify only one of image and image_url")
 			}
 			image = value
 			continue
 		default:
-			return req, fmt.Errorf("Unsupported video generation field %.64q", field)
+			return req, fmt.Errorf("unsupported video generation field %.64q", field)
 		}
 		if bytes.Equal(value, []byte("null")) || json.Unmarshal(value, dest) != nil {
-			return req, fmt.Errorf("Invalid value for %s", field)
+			return req, fmt.Errorf("invalid value for %s", field)
 		}
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
@@ -376,7 +376,7 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 	}
 	resp, err := h.tasks.OpenContent(c.Request.Context(), task, strings.TrimSpace(c.GetHeader("Range")))
 	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
 		writeVideoTaskServiceError(c, err, "")
@@ -395,9 +395,9 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 	if resp.Header.Get("Content-Type") == "" {
 		contentType, err = "application/octet-stream", nil
 	}
-	if (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent) || err != nil ||
-		!(strings.HasPrefix(contentType, "video/") || contentType == "application/octet-stream" ||
-			(resp.StatusCode == http.StatusPartialContent && contentType == "multipart/byteranges" && params["boundary"] != "")) {
+	validContentType := strings.HasPrefix(contentType, "video/") || contentType == "application/octet-stream" ||
+		(resp.StatusCode == http.StatusPartialContent && contentType == "multipart/byteranges" && params["boundary"] != "")
+	if (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent) || err != nil || !validContentType {
 		writeVideoTaskServiceError(c, service.ErrVideoTaskUpstream, "")
 		return
 	}

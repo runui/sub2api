@@ -72,7 +72,7 @@ func (r *VideoTaskBillingRepository) Settle(ctx context.Context, t videotask.Tas
 		if task.state != pending {
 			return videotask.ErrInvalidTransition
 		}
-		if task.billingState != "reserved" && !(task.billingState == "unreserved" && !success) {
+		if task.billingState != "reserved" && (task.billingState != "unreserved" || success) {
 			return videotask.ErrInvalidTransition
 		}
 

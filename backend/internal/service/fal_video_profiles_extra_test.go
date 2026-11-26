@@ -41,7 +41,9 @@ func TestFalVideoExtraProfilesSubmitAndSettle(t *testing.T) {
 		t.Run(tc.endpoint, func(t *testing.T) {
 			ctx := context.Background()
 			s, store, billing, usage, req := falVideoFixture()
-			account := s.accounts.(falVideoTestAccounts).account
+			accounts, ok := s.accounts.(falVideoTestAccounts)
+			require.True(t, ok)
+			account := accounts.account
 			account.Credentials["model_mapping"] = map[string]any{req.Model: tc.endpoint}
 			if strings.Contains(tc.fields, image) {
 				req.ImageURL = image

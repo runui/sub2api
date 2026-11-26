@@ -248,7 +248,7 @@ func TestStoreLeaseAndSettlement(t *testing.T) {
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	must(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `SELECT id FROM video_tasks WHERE id = 'video' FOR UPDATE`)
 	must(t, err)
 	claimNone(t, s, ctx) // A different transaction must skip this row without waiting.

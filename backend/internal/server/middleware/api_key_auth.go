@@ -400,7 +400,11 @@ func canReplayVideoTask(c *gin.Context, key *service.APIKey) bool {
 // RejectVideoTaskSpendingDenial preserves the normal admission gate for any new or unmatched request.
 func RejectVideoTaskSpendingDenial(c *gin.Context) bool {
 	if deny, ok := c.Get(videoTaskSpendingDenialKey); ok {
-		deny.(gin.HandlerFunc)(c)
+		if handler, valid := deny.(gin.HandlerFunc); valid && handler != nil {
+			handler(c)
+		} else {
+			AbortWithError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check video spending permissions")
+		}
 		return true
 	}
 	return false

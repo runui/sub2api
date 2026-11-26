@@ -10,7 +10,6 @@ import (
 )
 
 type videoTaskTestExecutor struct {
-	videoTaskExecutor
 	contentID string
 }
 

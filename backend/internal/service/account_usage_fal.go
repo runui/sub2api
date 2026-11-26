@@ -110,7 +110,11 @@ func (s *AccountUsageService) getFalUsage(ctx context.Context, account *Account,
 		if response.Err != nil {
 			return nil, response.Err
 		}
-		return response.Val.(*UsageInfo), nil
+		usage, ok := response.Val.(*UsageInfo)
+		if !ok {
+			return nil, fmt.Errorf("invalid fal usage refresh result")
+		}
+		return usage, nil
 	}
 }
 
@@ -202,7 +206,7 @@ func (s *AccountUsageService) fetchFalUsagePage(ctx context.Context, account *Ac
 	if err != nil {
 		return nil, infraerrors.New(http.StatusBadGateway, "FAL_USAGE_UNAVAILABLE", "Could not reach the fal usage API")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusUnauthorized:

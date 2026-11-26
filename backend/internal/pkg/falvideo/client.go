@@ -252,7 +252,7 @@ func (c *Client) request(ctx context.Context, key, method string, u *url.URL, pa
 		return errors.New("falvideo: missing HTTP response")
 	}
 	if resp.Body != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	isJSON := mediaType == "application/json" || (strings.HasPrefix(mediaType, "application/") && strings.HasSuffix(mediaType, "+json"))

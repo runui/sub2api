@@ -81,9 +81,10 @@ func loadGroupModelCatalog(ctx context.Context, accounts catalogAccountReader, r
 	var snapshot []Account
 	if accounts != nil {
 		platforms := []string{platform}
-		if platform == PlatformComposite {
+		switch platform {
+		case PlatformComposite:
 			platforms = domain.ConcretePlatformIDs()
-		} else if platform == PlatformGemini {
+		case PlatformGemini:
 			platforms = append(platforms, PlatformAntigravity)
 		}
 		if group.AllowVideoGeneration && platform == group.Platform {
@@ -129,7 +130,8 @@ func buildGroupModelCatalog(group *Group, platform string, accounts []Account, r
 	defaultIDs := make(map[string]map[string]struct{})
 	for i := range eligible {
 		a := &eligible[i]
-		if !catalogAccountPlatform(platform, a) && !(group.AllowVideoGeneration && platform == group.Platform && supportsVideoRoutePlatform(a.Platform)) {
+		isVideoProvider := group.AllowVideoGeneration && platform == group.Platform && supportsVideoRoutePlatform(a.Platform)
+		if !catalogAccountPlatform(platform, a) && !isVideoProvider {
 			continue
 		}
 		mapping := a.GetModelMapping()

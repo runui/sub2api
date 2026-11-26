@@ -439,9 +439,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
-				// A server error may occur after a video was enqueued. Only retry
-				// creation on a definitive rate-limit rejection.
-				if endpoint.IsVideoLookupRequest() || (isGrokVideoCreateEndpoint(endpoint) && failoverErr.StatusCode != http.StatusTooManyRequests) {
+				// Retry creation only if inference was never sent or was
+				// definitively rejected by the upstream rate limiter.
+				if endpoint.IsVideoLookupRequest() || (isGrokVideoCreateEndpoint(endpoint) && !failoverErr.IsCredentialFailure() && failoverErr.StatusCode != http.StatusTooManyRequests) {
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}

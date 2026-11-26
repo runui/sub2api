@@ -144,7 +144,7 @@ func (h *PaymentHandler) ReissueCheckoutLink(c *gin.Context) {
 func checkoutOrderID(c *gin.Context) (string, bool) {
 	raw := c.Param("id")
 	if len(raw) != 32 || strings.IndexFunc(raw, func(c rune) bool {
-		return !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f')
+		return (c < '0' || c > '9') && (c < 'a' || c > 'f')
 	}) >= 0 {
 		response.BadRequest(c, "invalid order ID")
 		return "", false

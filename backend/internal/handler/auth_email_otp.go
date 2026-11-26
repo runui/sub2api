@@ -65,7 +65,7 @@ func (h *AuthHandler) VerifyEmailOTP(c *gin.Context) {
 	if !bindEmailOTPRequest(c, &req) {
 		return
 	}
-	result, err := h.authService.VerifyEmailOTP(c.Request.Context(), req.Email, req.ChallengeID, req.Code, req.emailOTPSignupFields.codes())
+	result, err := h.authService.VerifyEmailOTP(c.Request.Context(), req.Email, req.ChallengeID, req.Code, req.codes())
 	if response.ErrorFrom(c, err) {
 		return
 	}
@@ -89,7 +89,7 @@ func (h *AuthHandler) CompleteEmailOTPRegistration(c *gin.Context) {
 	if !bindEmailOTPRequest(c, &req) {
 		return
 	}
-	result, err := h.authService.CompleteEmailOTPRegistration(c.Request.Context(), req.RegistrationToken, req.emailOTPSignupFields.codes())
+	result, err := h.authService.CompleteEmailOTPRegistration(c.Request.Context(), req.RegistrationToken, req.codes())
 	if response.ErrorFrom(c, err) {
 		return
 	}

@@ -128,7 +128,7 @@ func (s *Store) Claim(ctx context.Context, provider string, limit int, lease tim
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var tasks []Task
 	for rows.Next() {
 		t, err := scanTask(rows)

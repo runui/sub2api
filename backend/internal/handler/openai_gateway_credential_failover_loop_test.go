@@ -743,6 +743,20 @@ func TestGrokOAuthCredentialFailoverAcrossHTTPHandlers(t *testing.T) {
 	}
 }
 
+func TestGrokMediaVideoCreateDoesNotRetryUpstreamServerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "mixed_500_429")
+	defer cleanup()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/videos/generations", strings.NewReader(`{"model":"grok-imagine-video","prompt":"waves"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(recorder, req)
+
+	require.GreaterOrEqual(t, recorder.Code, http.StatusInternalServerError, recorder.Body.String())
+	require.Equal(t, []int64{801}, upstream.accountHits())
+}
+
 func TestGrokOAuthMissingSelectedRowRetriesHealthyAccountWithoutMutation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	_, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "missing_row")

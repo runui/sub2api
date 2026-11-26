@@ -962,14 +962,22 @@ func (s *GroupRepoSuite) TestListBindableWithFiltersAppliesFilterBeforePaginatio
 }
 
 func (s *GroupRepoSuite) TestListActiveByPlatform() {
-	s.Require().NoError(s.repo.Create(s.ctx, &service.Group{
+	existing, err := s.repo.ListActiveByPlatform(s.ctx, service.PlatformAnthropic)
+	s.Require().NoError(err)
+	wantIDs := make([]int64, 0, len(existing)+1)
+	for _, g := range existing {
+		wantIDs = append(wantIDs, g.ID)
+	}
+	active := &service.Group{
 		Name:             "g1",
 		Platform:         service.PlatformAnthropic,
 		RateMultiplier:   1.0,
 		IsExclusive:      false,
 		Status:           service.StatusActive,
 		SubscriptionType: service.SubscriptionTypeStandard,
-	}))
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, active))
+	wantIDs = append(wantIDs, active.ID)
 	s.Require().NoError(s.repo.Create(s.ctx, &service.Group{
 		Name:             "g2",
 		Platform:         service.PlatformOpenAI,
@@ -989,17 +997,11 @@ func (s *GroupRepoSuite) TestListActiveByPlatform() {
 
 	groups, err := s.repo.ListActiveByPlatform(s.ctx, service.PlatformAnthropic)
 	s.Require().NoError(err, "ListActiveByPlatform")
-	// 1 default anthropic group + 1 test active anthropic group = 2 total
-	s.Require().Len(groups, 2)
-	// Verify our test group is in the results
-	var found bool
+	gotIDs := make([]int64, 0, len(groups))
 	for _, g := range groups {
-		if g.Name == "g1" {
-			found = true
-			break
-		}
+		gotIDs = append(gotIDs, g.ID)
 	}
-	s.Require().True(found, "g1 group should be in results")
+	s.Require().ElementsMatch(wantIDs, gotIDs)
 }
 
 // --- ExistsByName ---

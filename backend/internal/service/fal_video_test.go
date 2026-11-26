@@ -183,7 +183,9 @@ func TestFalVideoProfileSubmissionPollReplayAndFrozenQuote(t *testing.T) {
 			s, store, billing, usage, req := falVideoFixture()
 			req.APIKey.Group.VideoRateIndependent = true
 			req.APIKey.Group.VideoRateMultiplier = 1
-			account := s.accounts.(falVideoTestAccounts).account
+			accounts, ok := s.accounts.(falVideoTestAccounts)
+			require.True(t, ok)
+			account := accounts.account
 			account.Credentials["model_mapping"] = map[string]any{req.Model: tc.endpoint}
 			req.ImageURL, req.Duration, req.Resolution = tc.image, 4, "4k"
 			req.APIKey.Group.VideoModelPrices = NormalizeVideoModelPrices(map[string]map[string]float64{tc.endpoint: {"4K": 0.75}})
@@ -238,7 +240,9 @@ func TestFalVideoProfileSubmissionPollReplayAndFrozenQuote(t *testing.T) {
 
 func TestFalVideoProfileRequiresExactGroupPrice(t *testing.T) {
 	s, store, billing, _, req := falVideoFixture()
-	s.accounts.(falVideoTestAccounts).account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
+	accounts, ok := s.accounts.(falVideoTestAccounts)
+	require.True(t, ok)
+	accounts.account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
 	_, err := s.Submit(context.Background(), req)
 	require.ErrorIs(t, err, ErrVideoModelPriceMissing)
 	require.Empty(t, billing.reserved)
@@ -247,7 +251,9 @@ func TestFalVideoProfileRequiresExactGroupPrice(t *testing.T) {
 
 func TestFalVideoMissingPriceDoesNotChooseAnotherEndpoint(t *testing.T) {
 	s, store, billing, _, req := falVideoFixture()
-	first := s.accounts.(falVideoTestAccounts).account
+	accounts, ok := s.accounts.(falVideoTestAccounts)
+	require.True(t, ok)
+	first := accounts.account
 	second := *first
 	second.ID++
 	first.Credentials = map[string]any{"api_key": falVideoTestKey, "model_mapping": map[string]any{req.Model: falVideoVeo31}}
@@ -266,7 +272,9 @@ func TestFalVideoMissingPriceDoesNotChooseAnotherEndpoint(t *testing.T) {
 
 func TestFalVideoGroupGateBlocksNewSubmissions(t *testing.T) {
 	s, store, billing, _, req := falVideoFixture()
-	s.accounts.(falVideoTestAccounts).account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
+	accounts, ok := s.accounts.(falVideoTestAccounts)
+	require.True(t, ok)
+	accounts.account.Credentials["model_mapping"] = map[string]any{req.Model: falVideoVeo31}
 	req.APIKey.Group.VideoModelPrices = map[string]map[string]float64{falVideoVeo31: {"720p": 1}}
 	req.APIKey.Group.AllowVideoGeneration = false
 	_, err := s.Submit(context.Background(), req)
@@ -378,7 +386,9 @@ func (s *falVideoSlots) ReleaseAccountSlot(_ context.Context, id int64, _ string
 
 func TestFalVideoBusyAccountFallsBackAndQuoteSurvivesReplay(t *testing.T) {
 	s, _, billing, _, req := falVideoFixture()
-	first := s.accounts.(falVideoTestAccounts).account
+	accounts, ok := s.accounts.(falVideoTestAccounts)
+	require.True(t, ok)
+	first := accounts.account
 	second := *first
 	second.ID = 41
 	s.accounts = falVideoPoolRepo{accounts: []Account{*first, second}}
@@ -541,7 +551,7 @@ func TestFalVideoContentUsesUncredentialedRangeRequest(t *testing.T) {
 	ctx := context.Background()
 	resp, err := s.OpenContent(ctx, videotask.Task{State: "succeeded", ResultURL: falVideoTestCDN}, "bytes=10-19")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusPartialContent, resp.StatusCode)
 	require.Equal(t, "bytes 10-19/100", resp.Header.Get("Content-Range"))
 	body, err := io.ReadAll(resp.Body)

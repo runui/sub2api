@@ -290,9 +290,10 @@ func TestVideoTaskContentRange(t *testing.T) {
 					header := http.Header{}
 					header.Set("Content-Type", tc.contentType)
 					header.Set("Accept-Ranges", "bytes")
-					if tc.status == http.StatusRequestedRangeNotSatisfiable {
+					switch tc.status {
+					case http.StatusRequestedRangeNotSatisfiable:
 						header.Set("Content-Range", "bytes */10")
-					} else if tc.status == http.StatusPartialContent {
+					case http.StatusPartialContent:
 						header.Set("Content-Range", "bytes 0-2/10")
 					}
 					header.Set("Set-Cookie", "secret=1")
@@ -313,9 +314,10 @@ func TestVideoTaskContentRange(t *testing.T) {
 				require.Contains(t, w.Body.String(), `"error":`)
 				require.NotContains(t, w.Body.String(), "mp4")
 			}
-			if w.Code == http.StatusPartialContent {
+			switch w.Code {
+			case http.StatusPartialContent:
 				require.Equal(t, "bytes 0-2/10", w.Header().Get("Content-Range"))
-			} else if w.Code == http.StatusRequestedRangeNotSatisfiable {
+			case http.StatusRequestedRangeNotSatisfiable:
 				require.Equal(t, "bytes */10", w.Header().Get("Content-Range"))
 			}
 		})

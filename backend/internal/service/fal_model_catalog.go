@@ -85,14 +85,14 @@ func falCatalogCapability(category, kind string) (operation string, inputs, outp
 		}
 		return output + ".generate", []string{input}, []string{output}, reason
 	}
-	switch {
-	case category == "video-editing", category == "lip-sync":
+	switch category {
+	case "video-editing", "lip-sync":
 		return "video.generate", []string{"video"}, []string{"video"}, "unsupported_video_input"
-	case category == "image-editing":
+	case "image-editing":
 		return "image.generate", []string{"image"}, []string{"image"}, "operation_not_supported"
-	case category == "text-to-music":
+	case "text-to-music":
 		return "audio.generate", []string{"text"}, []string{"audio"}, "operation_not_supported"
-	case category == "llm":
+	case "llm":
 		// The LLM category does not establish a chat protocol or input modalities.
 		return "text.generate", nil, []string{"text"}, "operation_not_supported"
 	}

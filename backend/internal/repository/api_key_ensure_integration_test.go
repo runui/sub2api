@@ -228,6 +228,13 @@ func TestEnsureDefaultAPIKeyPostgres(t *testing.T) {
 	require.Contains(t, w.Body.String(), "DEFAULT_API_KEY_UNSUPPORTED")
 
 	accountRepo := NewAccountRepository(client, db, nil)
+	for model, platform := range map[string]string{"public-a": service.PlatformOpenAI, "public-b": service.PlatformAnthropic} {
+		account := mustCreateAccount(t, client, &service.Account{
+			Name: "account-" + model, Platform: platform, Type: service.AccountTypeAPIKey,
+			Credentials: map[string]any{"model_mapping": map[string]any{"upstream-*": "upstream-*"}},
+		})
+		require.NoError(t, accountRepo.BindGroups(ctx, account.ID, []int64{g.ID}))
+	}
 	gateway := service.NewGatewayService(accountRepo, nil, nil, nil, nil, nil, nil, nil,
 		cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, resolver, nil, nil)
 	gatewayHandler := handler.NewGatewayHandler(gateway, nil, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, cfg, nil)
