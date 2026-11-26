@@ -1509,6 +1509,43 @@ func TestAPIKeyAuthRejectsExhaustedBalance(t *testing.T) {
 	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "Insufficient account balance")
 }
 
+func TestAPIKeyAuthModelListAllowsZeroBalanceButStillRequiresValidKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	user := &service.User{ID: 10, Role: service.RoleUser, Status: service.StatusActive, Balance: 0}
+	repo := &stubApiKeyRepo{getByKey: func(_ context.Context, key string) (*service.APIKey, error) {
+		apiKey := &service.APIKey{ID: 104, UserID: user.ID, Key: key, User: user}
+		switch key {
+		case "active":
+			apiKey.Status = service.StatusActive
+		case "expired":
+			apiKey.Status = service.StatusAPIKeyExpired
+		default:
+			return nil, service.ErrAPIKeyNotFound
+		}
+		return apiKey, nil
+	}}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	router := newAuthTestRouter(service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg), nil, cfg)
+	for _, tc := range []struct {
+		method, path, key string
+		want              int
+	}{
+		{http.MethodGet, "/v1/models", "active", http.StatusOK},
+		{http.MethodGet, "/models", "active", http.StatusOK},
+		{http.MethodGet, "/v1/models", "invalid", http.StatusUnauthorized},
+		{http.MethodGet, "/v1/models", "expired", http.StatusForbidden},
+		{http.MethodPost, "/v1/chat/completions", "active", http.StatusForbidden},
+	} {
+		t.Run(tc.method+" "+tc.path+" "+tc.key, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+tc.key)
+			router.ServeHTTP(w, req)
+			require.Equal(t, tc.want, w.Code, w.Body.String())
+		})
+	}
+}
+
 func TestAPIKeyAuthOpenAIQuotaErrorFormat(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1590,6 +1627,9 @@ func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService
 	router.GET("/t", ok)
 	router.POST("/v1/responses", ok)
 	router.POST("/v1/messages", ok)
+	router.POST("/v1/chat/completions", ok)
+	router.GET("/v1/models", ok)
+	router.GET("/models", ok)
 	router.GET("/v1/usage", ok)
 	router.GET("/v1/sub2api/billing", ok)
 	return router

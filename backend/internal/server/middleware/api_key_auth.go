@@ -177,6 +177,8 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		ctx = service.WithHeaderOverrideRequestScope(ctx, apiKey.User.ID, apiKey.ID, apiKey.GroupID)
 		c.Request = c.Request.WithContext(ctx)
 		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
+		modelListRequest := c.Request.Method == http.MethodGet &&
+			(c.FullPath() == "/v1/models" || c.FullPath() == "/models")
 		// Async task reads must survive exhausted balance or quota. An expired
 		// reader key is still invalid; ownership is checked by the handler.
 		videoTaskRead := isVideoTaskRead(c)
@@ -282,7 +284,8 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				}
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
-				if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+				// Model discovery does not spend balance. Keep all other key and group checks.
+				if !modelListRequest && apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
 					deny := gin.HandlerFunc(func(c *gin.Context) { AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance") })
 					if !deferSpendingDenial {
 						deny(c)
