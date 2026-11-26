@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 // FetchOpenAIModelsList discovers a single account's raw public model catalog.
@@ -295,7 +296,7 @@ func ApplyPinnedCodexModelsMapping(response *OpenAIModelsResponse, account *Acco
 
 // FetchPinnedOpenAIModelsList includes explicitly enabled scheduler fallback.
 // An authoritative empty catalog is success, including after group filtering.
-func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, group *Group, maxAccountSwitches int, ifNoneMatch string) (*OpenAIModelsResponse, *Account, error) {
+func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, group *Group, maxAccountSwitches int, ifNoneMatch string, videoIDs ...string) (*OpenAIModelsResponse, *Account, error) {
 	fetch := func(ctx context.Context, account *Account) (*OpenAIModelsResponse, error) {
 		response, err := s.FetchOpenAIModelsList(ctx, account)
 		if err != nil {
@@ -326,6 +327,9 @@ func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, 
 			if err := json.Unmarshal(raw, &model); err != nil {
 				return nil, nil, err
 			}
+			if catalogAccountOperations(group, result.account, model.ID, model.ID) == 0 && !slices.Contains(videoIDs, model.ID) {
+				continue
+			}
 			if _, exists := byID[model.ID]; !exists {
 				byID[model.ID] = raw
 				modelIDs = append(modelIDs, model.ID)
@@ -333,8 +337,22 @@ func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, 
 			}
 		}
 	}
+	// Video routes are local to the gateway and need not appear on the fixed
+	// OpenAI accounts. Keep observed metadata when a video ID already exists.
+	for _, id := range videoIDs {
+		if _, exists := byID[id]; exists {
+			continue
+		}
+		raw, err := json.Marshal(openai.Model{ID: id, Object: "model", Type: "model", DisplayName: id, OwnedBy: "openai", Created: 1704067200})
+		if err != nil {
+			return nil, nil, err
+		}
+		byID[id] = raw
+		modelIDs = append(modelIDs, id)
+		models = append(models, raw)
+	}
 	if group.ModelAllowlistEnabled() {
-		models = selectModelCatalogEntries(byID, group.ModelAllowlist.FilterForListing(modelIDs))
+		models = selectModelCatalogEntries(byID, projectCatalogAllowlist(modelIDs, group.ModelAllowlist))
 	}
 	body, err := json.Marshal(struct {
 		Object string            `json:"object"`
@@ -343,6 +361,8 @@ func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, 
 	if err != nil {
 		return nil, nil, err
 	}
+	// Validators describe the client-visible representation, not the cached
+	// upstream body: video routes and group policy may change independently.
 	response := &OpenAIModelsResponse{Body: body, ETag: codexModelsManifestBodyETag(body)}
 	return openAIModelsResponseForClient(response, ifNoneMatch), results[0].account, nil
 }

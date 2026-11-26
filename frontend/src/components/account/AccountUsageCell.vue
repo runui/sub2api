@@ -693,7 +693,11 @@
       <div v-if="isFalApiKey" class="truncate text-[10px] text-gray-500 dark:text-gray-400" data-test="fal-usage">
         <div v-if="loading" class="h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
         <span v-else-if="error" class="text-red-600 dark:text-red-400" :title="error">{{ error }}</span>
-        <span v-else-if="usageInfo?.fal_usage" :title="t('admin.accounts.usageWindow.falWorkspaceScope')">
+        <span
+          v-else-if="usageInfo?.fal_usage"
+          :class="['font-medium leading-4', platformTextClass(account.platform)]"
+          :title="t('admin.accounts.usageWindow.falWorkspaceScope')"
+        >
           {{ t('admin.accounts.usageWindow.falWorkspaceCost') }}:
           {{ usageInfo.fal_usage.totals.map(falUsageAmount).join(' · ') || t('admin.accounts.usageWindow.falWorkspaceEmpty') }}
         </span>
@@ -782,6 +786,7 @@ import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildAccountUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
+import { platformTextClass } from '@/utils/platformColors'
 import { formatCompactNumber, formatDateTime } from '@/utils/format'
 import { isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
 import { supportsAccountQuota } from '@/utils/accountQuota'

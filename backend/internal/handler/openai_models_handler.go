@@ -23,8 +23,13 @@ func (h *GatewayHandler) pinnedOpenAIModels(c *gin.Context, group *service.Group
 	if c.Param("model") != "" {
 		etag = "" // A collection ETag cannot validate a single-model representation.
 	}
+	var videos []string
+	if h.gatewayService != nil {
+		// Discovery can still serve its upstream entries if local video lookup fails.
+		videos, _ = h.gatewayService.GroupVideoModelIDs(c.Request.Context(), group)
+	}
 	response, account, err := h.openAIGatewayService.FetchPinnedOpenAIModelsList(
-		c.Request.Context(), group, h.maxAccountSwitches, etag,
+		c.Request.Context(), group, h.maxAccountSwitches, etag, videos...,
 	)
 	if c.Request.Context().Err() != nil {
 		return

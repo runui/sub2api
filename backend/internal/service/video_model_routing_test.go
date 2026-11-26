@@ -72,15 +72,16 @@ func TestVideoModelCatalogUsesGroupVideoRoutesAndAllowlist(t *testing.T) {
 	}
 	accounts := []Account{fal, grok}
 	group := &Group{ID: 1, Platform: PlatformComposite, AllowVideoGeneration: true}
-	require.Equal(t, []string{"fal-video", "grok-video", "public"}, listVideoModelIDs(group, accounts, routes))
+	listed := func() []string {
+		return projectCatalogAllowlist(buildGroupModelCatalog(group, group.Platform, accounts, routes).videoIDs(), group.ModelAllowlist)
+	}
+	require.Equal(t, []string{"fal-video", "grok-video", "public"}, listed())
 	group.ModelAllowlist = GroupModelAllowlist{Enabled: true, Models: []string{"alias-video", "public", "text", "shared"}}
-	require.Equal(t, []string{"alias-video", "public"}, listVideoModelIDs(group, accounts, routes))
+	require.Equal(t, []string{"alias-video", "public"}, listed())
 	group.SubscriptionType = SubscriptionTypeSubscription
-	require.Equal(t, []string{"alias-video"}, listVideoModelIDs(group, accounts, routes))
+	require.Equal(t, []string{"alias-video"}, listed())
 	group.AllowVideoGeneration = false
-	ids, err := (*GatewayService)(nil).ListVideoModels(context.Background(), group)
-	require.NoError(t, err)
-	require.Empty(t, ids)
+	require.Empty(t, listed())
 }
 
 func TestVideoModelRoutingRegisteredFalAndGrokAliasIsAmbiguous(t *testing.T) {

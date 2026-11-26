@@ -15,7 +15,7 @@ type accountRepoStubForCompositeModelsList struct {
 	accounts []Account
 }
 
-func (s *accountRepoStubForCompositeModelsList) ListSchedulableByGroupID(_ context.Context, _ int64) ([]Account, error) {
+func (s *accountRepoStubForCompositeModelsList) ListModelAvailabilityCandidates(_ context.Context, _ *int64, _ []string, _ bool) ([]Account, error) {
 	return s.accounts, nil
 }
 
@@ -187,11 +187,20 @@ func TestAdminService_CompositeModelsListCandidatesIncludeConcreteAccountMapping
 					"model_mapping": map[string]any{"kimi-custom": "kimi-k2"},
 				},
 			},
+			{
+				ID:       4,
+				Platform: PlatformFal,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"api_key": "test", "model_mapping": map[string]any{"motion": falVideoUpstreamModel},
+				},
+			},
 		},
 	}
 	groupRepo := &groupRepoStubForAdmin{
 		getByIDByID: map[int64]*Group{
-			99: {ID: 99, Platform: PlatformComposite},
+			99: {ID: 99, Platform: PlatformComposite, AllowVideoGeneration: true,
+				ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"motion"}}},
 		},
 	}
 	svc := &adminServiceImpl{accountRepo: accountRepo, groupRepo: groupRepo}
@@ -202,18 +211,23 @@ func TestAdminService_CompositeModelsListCandidatesIncludeConcreteAccountMapping
 	require.Contains(t, candidates, "gpt-custom")
 	require.Contains(t, candidates, "gemini-custom")
 	require.Contains(t, candidates, "kimi-custom")
-	require.Contains(t, candidates, "gpt-5.5")
-	require.Contains(t, candidates, "gemini-2.5-flash")
+	require.Contains(t, candidates, "motion")
+	require.NotContains(t, candidates, "gpt-5.5")
+	require.NotContains(t, candidates, "gemini-2.5-flash")
+	public, err := (&GatewayService{accountRepo: accountRepo}).GroupModelIDs(context.Background(), groupRepo.getByIDByID[99], PlatformComposite)
+	require.NoError(t, err)
+	require.Equal(t, []string{"motion"}, public)
 }
 
-// 独立 CN 分组的模型列表候选沿用 default 分支的 Claude 默认列表；
-// composite 支持不得改变独立分组的候选语义。
+// 尚未保存的 CN 分组（id=0）沿用 Claude 默认候选；现有分组按实际账号构建目录。
 func TestAdminService_CNProviderModelsListCandidatesKeepClaudeDefaults(t *testing.T) {
 	want := make([]string, 0, len(claude.DefaultModels))
 	for _, model := range claude.DefaultModels {
 		want = append(want, model.ID)
 	}
 	for _, platform := range []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax} {
-		require.Equal(t, want, defaultModelsListCandidateIDs(platform), "platform=%s", platform)
+		got, err := (&adminServiceImpl{}).GetGroupModelsListCandidates(context.Background(), 0, platform)
+		require.NoError(t, err)
+		require.Equal(t, want, got, "platform=%s", platform)
 	}
 }

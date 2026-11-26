@@ -205,7 +205,7 @@ func TestGatewayModelsIncludesConfiguredVideoAliases(t *testing.T) {
 				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &models))
 				return modelIDsForTest(models.Data)
 			}
-			require.Subset(t, list(), []string{openai.DefaultModelIDs()[0], "my-motion-model"})
+			require.Equal(t, []string{"my-motion-model"}, list())
 			group.ModelAllowlist = service.GroupModelAllowlist{Enabled: true, Models: []string{"my-motion-model"}}
 			require.Equal(t, []string{"my-motion-model"}, list())
 			group.AllowVideoGeneration = false
@@ -218,15 +218,15 @@ func TestGatewayCompositeRouteModelsAppearInBothCatalogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const groupID int64 = 7784
 	accounts := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
-		groupID: {{ID: 1, Platform: service.PlatformOpenAI, Credentials: map[string]any{
-			"model_mapping": map[string]any{"mapped-model": "upstream"},
+		groupID: {{ID: 1, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Credentials: map[string]any{
+			"model_mapping": map[string]any{"mapped-model": "upstream", "gpt-image-1": "gpt-image-1"},
 		}}},
 	}}
 	routes := &gatewayModelsRouteRepoStub{routes: []service.CompositeModelRoute{
-		{PublicModel: "route-only", MatchType: service.CompositeRouteMatchExact, Enabled: true},
-		{PublicModel: "route-only", MatchType: service.CompositeRouteMatchExact, Enabled: true},
-		{PublicModel: "mapped-model", MatchType: service.CompositeRouteMatchExact, Enabled: true},
-		{PublicModel: "image-only", MatchType: service.CompositeRouteMatchExact, Endpoint: service.CompositeRouteEndpointImages, Enabled: true},
+		{PublicModel: "route-only", TargetPlatform: service.PlatformOpenAI, UpstreamModel: "mapped-model", MatchType: service.CompositeRouteMatchExact, Enabled: true},
+		{PublicModel: "route-only", TargetPlatform: service.PlatformOpenAI, UpstreamModel: "mapped-model", MatchType: service.CompositeRouteMatchExact, Enabled: true},
+		{PublicModel: "mapped-model", TargetPlatform: service.PlatformOpenAI, MatchType: service.CompositeRouteMatchExact, Enabled: true},
+		{PublicModel: "image-only", TargetPlatform: service.PlatformOpenAI, UpstreamModel: "gpt-image-1", MatchType: service.CompositeRouteMatchExact, Endpoint: service.CompositeRouteEndpointImages, Enabled: true},
 		{PublicModel: "prefix-", MatchType: service.CompositeRouteMatchPrefix, Enabled: true},
 		{PublicModel: "disabled", MatchType: service.CompositeRouteMatchExact, Enabled: false},
 	}}
@@ -236,15 +236,15 @@ func TestGatewayCompositeRouteModelsAppearInBothCatalogs(t *testing.T) {
 		allowlist []string
 		want      []string
 	}{
-		{"routes", routes, nil, []string{"mapped-model", "route-only", "image-only"}},
+		{"routes", routes, nil, []string{"gpt-image-1", "image-only", "mapped-model", "route-only"}},
 		{"allowlist", routes, []string{"route-only", "disabled", "unknown"}, []string{"route-only"}},
 		{"lookup failure", &gatewayModelsRouteRepoStub{err: errors.New("unavailable")}, nil, []string{"mapped-model"}},
 		{"allowlisted lookup failure", &gatewayModelsRouteRepoStub{err: errors.New("unavailable")}, []string{"mapped-model", "unknown"}, []string{"mapped-model"}},
-		{"no route repo", nil, nil, []string{"mapped-model"}},
+		{"no route repo", nil, nil, []string{"gpt-image-1", "mapped-model"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newGatewayModelsHandlerForTest(accounts, tc.repo)
-			group := &service.Group{ID: groupID, Platform: service.PlatformComposite}
+			group := &service.Group{ID: groupID, Platform: service.PlatformComposite, AllowImageGeneration: true}
 			if tc.allowlist != nil {
 				group.ModelAllowlist = service.GroupModelAllowlist{Enabled: true, Models: tc.allowlist}
 			}
@@ -255,6 +255,10 @@ func TestGatewayCompositeRouteModelsAppearInBothCatalogs(t *testing.T) {
 				c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{Group: group})
 				if endpoint == "models" {
 					h.Models(c)
+					if strings.Contains(tc.name, "lookup failure") {
+						require.Equal(t, http.StatusInternalServerError, rec.Code)
+						continue
+					}
 					var got gatewayModelsResponseForTest
 					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 					require.Equal(t, tc.want, modelIDsForTest(got.Data))
@@ -262,9 +266,12 @@ func TestGatewayCompositeRouteModelsAppearInBothCatalogs(t *testing.T) {
 					h.CodexModels(c)
 					var got codexModelsResponseForTest
 					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-					want := tc.want
-					if tc.name == "routes" {
+					want := []string{"mapped-model"}
+					switch tc.name {
+					case "routes":
 						want = []string{"mapped-model", "route-only"}
+					case "allowlist":
+						want = []string{"route-only"}
 					}
 					require.ElementsMatch(t, want, codexModelSlugsForTest(got.Models))
 				}
@@ -504,7 +511,7 @@ func TestGatewayModels_UnmappedOpenAIAccountsSupplementMappedModels(t *testing.T
 				c, _ := gin.CreateTestContext(rec)
 				c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 				c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-					Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI, ModelAllowlist: tt.config},
+					Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI, AllowImageGeneration: true, ModelAllowlist: tt.config},
 				})
 				h.Models(c)
 				require.Equal(t, http.StatusOK, rec.Code)
@@ -815,14 +822,16 @@ func TestGatewayCodexModels_CompositeAnthropicDoesNotAdvertiseAntigravityDefault
 	require.NotContains(t, slugs, "gemini-2.5-flash")
 }
 
-// Scenario: Antigravity retains its own Claude and Gemini defaults inside Composite groups.
-func TestGatewayModels_CompositeAntigravityAdvertisesAntigravityDefaults(t *testing.T) {
+func TestGatewayModels_CompositeAntigravityAdvertisesRoutableMappings(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(65)
 	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{
 		byGroup: map[int64][]service.Account{
-			groupID: {{ID: 1, Platform: service.PlatformAntigravity}},
+			groupID: {{ID: 1, Platform: service.PlatformAntigravity,
+				Extra:       map[string]any{"mixed_scheduling": true},
+				Credentials: map[string]any{"model_mapping": map[string]any{"claude-opus-4-6": "claude-opus-4-6-thinking", "gemini-2.5-flash": "gemini-2.5-flash"}},
+			}},
 		},
 	})
 
@@ -1299,7 +1308,7 @@ func TestGatewayModels_AnthropicCustomModelsListIncludesOAuthClaudeAndMappedDeep
 	require.Equal(t, []string{"claude-fable-5", "claude-opus-4-8", "deepseek-v4-pro"}, modelIDsForTest(got.Data))
 }
 
-func TestGatewayModels_AnthropicCustomModelsListDisabledKeepsMappedModelList(t *testing.T) {
+func TestGatewayModels_AnthropicDisabledAllowlistIncludesDefaultsBackedByUnmappedAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(29)
@@ -1347,7 +1356,7 @@ func TestGatewayModels_AnthropicCustomModelsListDisabledKeepsMappedModelList(t *
 
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	require.Equal(t, []string{"deepseek-v4-pro"}, modelIDsForTest(got.Data))
+	require.ElementsMatch(t, append(claude.DefaultModelIDs(), "deepseek-v4-pro"), modelIDsForTest(got.Data))
 }
 
 func TestGatewayModels_AnthropicCustomModelsListIncludesOAuthClaudeWithoutMappings(t *testing.T) {
@@ -1826,10 +1835,8 @@ func TestGatewayModels_CompositeExactRoutesRespectTypeSafeIsolation(t *testing.T
 		{PublicModel: "image-alias", TargetPlatform: service.PlatformOpenAI, MatchType: service.CompositeRouteMatchExact, Endpoint: service.CompositeRouteEndpointImages, Enabled: true},
 	}}
 	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{}, routes)
-	wantModels := make([]string, 0, len(routes.routes))
-	for _, route := range routes.routes {
-		wantModels = append(wantModels, route.PublicModel)
-	}
+	// These routes have no backing accounts. Ordinary discovery must not
+	// advertise them; the existing Codex projection is intentionally unchanged.
 	for _, allowlisted := range []bool{false, true} {
 		name := "unrestricted"
 		if allowlisted {
@@ -1856,7 +1863,7 @@ func TestGatewayModels_CompositeExactRoutesRespectTypeSafeIsolation(t *testing.T
 					h.Models(ctx)
 					var models gatewayModelsResponseForTest
 					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &models))
-					require.ElementsMatch(t, wantModels, modelIDsForTest(models.Data))
+					require.Empty(t, models.Data)
 				}
 				require.Equal(t, http.StatusOK, rec.Code)
 			}
@@ -1958,7 +1965,11 @@ func TestGatewayModels_CompositeCodexFiltersEffectiveResponsesRoutes(t *testing.
 							h.Models(ctx)
 							var models gatewayModelsResponseForTest
 							require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &models))
-							require.Contains(t, modelIDsForTest(models.Data), scenario.model)
+							if len(scenario.accounts) == 0 {
+								require.NotContains(t, modelIDsForTest(models.Data), scenario.model)
+							} else {
+								require.Contains(t, modelIDsForTest(models.Data), scenario.model)
+							}
 						}
 						require.Equal(t, http.StatusOK, recorder.Code)
 					}

@@ -84,54 +84,24 @@ func (s *adminServiceImpl) validateSimpleModeGroupAccess(group *Group) error {
 
 func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id int64, platform string) ([]string, error) {
 	platform = strings.TrimSpace(platform)
-	if id > 0 {
-		group, err := s.groupRepo.GetByIDLite(ctx, id)
-		if err != nil {
-			return nil, err
-		}
+	if id <= 0 {
 		if platform == "" {
-			platform = group.Platform
+			platform = PlatformAnthropic
 		}
+		return defaultModelsListCandidateIDs(platform), nil
 	}
-	if platform == "" {
-		platform = PlatformAnthropic
-	}
-
-	candidates := defaultModelsListCandidateIDs(platform)
-	if id <= 0 || s.accountRepo == nil {
-		return candidates, nil
-	}
-
-	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, id)
+	group, err := s.groupRepo.GetByIDLite(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-
-	seen := make(map[string]struct{}, len(candidates))
-	for _, model := range candidates {
-		seen[model] = struct{}{}
+	if platform == "" {
+		platform = group.Platform
 	}
-	for _, acc := range accounts {
-		if platform == PlatformComposite {
-			if !isConcreteRequestPlatform(acc.Platform) {
-				continue
-			}
-		} else if acc.Platform != platform {
-			continue
-		}
-		for model := range acc.GetModelMapping() {
-			model = strings.TrimSpace(model)
-			if model == "" {
-				continue
-			}
-			if _, ok := seen[model]; ok {
-				continue
-			}
-			seen[model] = struct{}{}
-			candidates = append(candidates, model)
-		}
+	catalog, err := loadGroupModelCatalog(ctx, s.accountRepo, s.compositeRouteRepo, group, platform)
+	if err != nil {
+		return nil, err
 	}
-	return candidates, nil
+	return catalog.ids, nil
 }
 
 func (s *adminServiceImpl) ListCompositeRoutes(ctx context.Context, groupID int64) ([]CompositeModelRoute, error) {

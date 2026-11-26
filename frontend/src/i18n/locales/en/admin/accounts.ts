@@ -1768,8 +1768,8 @@ export default {
         noData: 'No usage data available for this account'
       },
       usageWindow: {
-        falWorkspaceCost: 'fal workspace · 7-day estimated cost',
-        falWorkspaceScope: 'fal upstream model spend across the workspace, not a remaining balance or this key’s spend.',
+        falWorkspaceCost: '7d cost',
+        falWorkspaceScope: 'Estimated model spend for the entire fal workspace over the last 7 days, not a remaining balance or per-key spend.',
         falWorkspaceEmpty: 'No billable usage',
         statsTitle: '5-Hour Window Usage Statistics',
         statsTitleDaily: 'Daily Usage Statistics',

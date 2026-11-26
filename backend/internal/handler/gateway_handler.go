@@ -24,7 +24,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -1169,122 +1168,73 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 // Models lists visible models, or retrieves the exact list entry for a model path parameter.
 // GET /v1/models and /v1/models/:model (also exposed through root aliases)
-// Returns models based on account configurations (model_mapping whitelist)
-// Falls back to default models if no whitelist is configured
+// Group discovery uses the configured catalog; client-specific manifests are separate.
 func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
-
 	var group *service.Group
-	var groupID *int64
-	var platform string
-
-	if apiKey != nil && apiKey.Group != nil {
+	if apiKey != nil {
 		group = apiKey.Group
-		groupID = &group.ID
-		platform = group.Platform
 	}
-	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
-		platform = forcedPlatform
-	}
-
-	if platform == service.PlatformOpenAI && apiKey != nil && apiKey.Group != nil &&
-		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled {
-		h.pinnedOpenAIModels(c, apiKey.Group)
+	forced, _ := middleware2.GetForcePlatformFromContext(c)
+	if group == nil {
+		// Ungrouped keys are normally blocked by middleware. Keep their legacy
+		// discovery behavior where the operator explicitly enables them.
+		models := h.gatewayService.GetAvailableModels(c.Request.Context(), nil, forced)
+		if len(models) == 0 && (forced != service.PlatformOpenAI || models == nil) {
+			models = defaultModelIDsForPlatform(forced)
+		}
+		writeGroupModelsList(c, forced, models)
 		return
 	}
-
-	var videoModels []string
-	if group != nil && platform == group.Platform {
-		// A video catalog lookup failure must not break existing model discovery.
-		videoModels, _ = h.gatewayService.ListVideoModels(c.Request.Context(), group)
+	platform := group.Platform
+	if strings.TrimSpace(forced) != "" {
+		platform = forced
 	}
-	withVideo := func(ids []string) []string {
-		if len(videoModels) == 0 {
-			return ids
-		}
-		return mergeModelIDs(ids, videoModels)
+	if platform == service.PlatformOpenAI && group.Platform == platform && group.CodexModelsManifestConfig.Enabled {
+		h.pinnedOpenAIModels(c, group)
+		return
 	}
-
-	if platform == service.PlatformComposite {
-		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID, "", true)
-		if len(availableModels) == 0 {
-			availableModels = defaultModelIDsForPlatform(platform)
-		}
-		availableModels = withVideo(availableModels)
-		if group.ModelAllowlistEnabled() {
-			writeAllowlistedModelsList(c, platform, group.ModelAllowlist.FilterForListing(availableModels))
+	models, err := h.gatewayService.GroupModelIDs(c.Request.Context(), group, platform)
+	if err != nil {
+		if c.Request.Context().Err() != nil {
 			return
 		}
-		writeModelsList(c, platform, availableModels)
-		return
-	}
-
-	// Get available models from account configurations for the selected group platform.
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
-	if platform == service.PlatformAnthropic {
-		source := availableModels
-		if group != nil && group.ModelAllowlistEnabled() {
-			source = modelListingSource(platform, availableModels, defaultModelIDsForPlatform(platform))
-		} else if len(source) == 0 {
-			source = defaultModelIDsForPlatform(platform)
+		if platform == service.PlatformOpenAI || platform == service.PlatformGrok {
+			writeOpenAIModelsError(c, http.StatusInternalServerError, "api_error", "Failed to load group models")
+		} else {
+			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to load group models")
 		}
-		expanded := h.gatewayService.ExpandAnthropicLongContextModels(c.Request.Context(), group, source)
-		if len(availableModels) > 0 || len(expanded) > len(source) || (group != nil && group.ModelAllowlistEnabled()) {
-			availableModels = expanded
-		}
-	}
-	if group.ModelAllowlistEnabled() {
-		source := modelListingSource(platform, availableModels, defaultModelIDsForPlatform(platform))
-		writeAllowlistedModelsList(c, platform, group.ModelAllowlist.FilterForListing(withVideo(source)))
 		return
 	}
-
-	if len(availableModels) > 0 || (platform == service.PlatformOpenAI && availableModels != nil) {
-		writeModelsList(c, platform, withVideo(availableModels))
-		return
-	}
-
-	// Fallback to default models
-	if platform == service.PlatformOpenAI {
-		if len(videoModels) > 0 {
-			writeOpenAIModelsList(c, withVideo(openai.DefaultModelIDs()))
-			return
-		}
-		writeModelsListResponse(c, openai.DefaultModels)
-		return
-	}
-
-	if platform == service.PlatformGemini {
-		writeModelsListWithExtraIDs(c, geminicli.DefaultModels, videoModels, func(model geminicli.Model) string { return model.ID })
-		return
-	}
-	if platform == service.PlatformGrok {
-		writeGrokModelsList(c, withVideo(xai.DefaultModelIDs()))
-		return
-	}
-	if platform == service.PlatformTypeSafe {
-		writeModelsList(c, platform, withVideo([]string{typesafe.JevLatestModel}))
-		return
-	}
-
-	writeModelsListWithExtraIDs(c, claude.DefaultModels, videoModels, func(model claude.Model) string { return model.ID })
+	writeGroupModelsList(c, platform, models)
 }
 
-func writeModelsListWithExtraIDs[T any](c *gin.Context, defaults []T, extra []string, modelID func(T) string) {
-	if len(extra) == 0 {
-		writeModelsListResponse(c, defaults)
+func writeGroupModelsList(c *gin.Context, platform string, ids []string) {
+	// Keep the curated metadata on known IDs; aliases still use the same
+	// generic shape as before. The common serializer also handles detail.
+	var known map[string]claude.Model
+	switch platform {
+	case service.PlatformAnthropic, "":
+		known = make(map[string]claude.Model, len(claude.DefaultModels))
+		for _, model := range claude.DefaultModels {
+			known[model.ID] = model
+		}
+	case service.PlatformGemini:
+		known = make(map[string]claude.Model, len(geminicli.DefaultModels))
+		for _, model := range geminicli.DefaultModels {
+			known[model.ID] = claude.Model(model)
+		}
+	default:
+		writeModelsList(c, platform, ids)
 		return
 	}
-	seen := make(map[string]struct{}, len(defaults))
-	models := make([]any, 0, len(defaults)+len(extra))
-	for _, model := range defaults {
-		seen[modelID(model)] = struct{}{}
-		models = append(models, model)
-	}
-	for _, id := range extra {
-		if _, ok := seen[id]; !ok {
-			models = append(models, claude.Model{ID: id, Type: "model", DisplayName: id, CreatedAt: "2024-01-01T00:00:00Z"})
+	models := make([]claude.Model, 0, len(ids))
+	for _, id := range ids {
+		model, ok := known[id]
+		if !ok {
+			model = claude.Model{ID: id, Type: "model", DisplayName: id, CreatedAt: "2024-01-01T00:00:00Z"}
 		}
+		models = append(models, model)
 	}
 	writeModelsListResponse(c, models)
 }
@@ -1428,14 +1378,6 @@ func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
 		})
 	}
 	writeModelsListResponse(c, models)
-}
-
-func writeAllowlistedModelsList(c *gin.Context, platform string, modelIDs []string) {
-	if platform == service.PlatformOpenAI {
-		writeOpenAIModelsList(c, modelIDs)
-		return
-	}
-	writeModelsList(c, platform, modelIDs)
 }
 
 type grokReasoningEffortOption struct {

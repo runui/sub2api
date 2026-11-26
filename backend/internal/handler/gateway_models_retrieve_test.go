@@ -52,6 +52,12 @@ func TestRetrieveModelMatchesVisibleCatalogue(t *testing.T) {
 					Data []json.RawMessage `json:"data"`
 				}
 				require.NoError(t, json.Unmarshal(list.Body.Bytes(), &catalog))
+				if platform == service.PlatformTypeSafe && mapped {
+					// System One accepts only its fixed public ID, not arbitrary aliases.
+					require.Empty(t, catalog.Data)
+					require.Equal(t, http.StatusNotFound, requestModelForTest(h, group, "custom-model", "").Code)
+					return
+				}
 				require.NotEmpty(t, catalog.Data)
 				var model struct {
 					ID string `json:"id"`
@@ -111,4 +117,37 @@ func TestRetrievePinnedModelPreservesMetadataFilteringAndErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRetrievePinnedModelMediaProjectionUpdatesCollectionETag(t *testing.T) {
+	group := &service.Group{ID: 73, Platform: service.PlatformOpenAI, AllowVideoGeneration: true, AllowImageGeneration: true,
+		CodexModelsManifestConfig: service.GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{2}}}
+	upstream := &codexModelsPinnedHTTPUpstream{bodies: map[int64]string{
+		2: `{"data":[{"id":"text-model","owned_by":"upstream"},{"id":"gpt-image-1"}]}`,
+	}}
+	codex := newPinnedCodexTestHandler([]service.Account{newPinnedCodexAccount(2, service.StatusActive, true, false)}, upstream, 3)
+	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
+		group.ID: {{Platform: service.PlatformFal, Type: service.AccountTypeAPIKey, Credentials: map[string]any{
+			"api_key": "test", "model_mapping": map[string]any{"motion": "fal-ai/veo3.1"},
+		}}},
+	}})
+	h.openAIGatewayService = codex.gatewayService
+	first := requestModelForTest(h, group, "", "")
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	require.Equal(t, []string{"text-model", "gpt-image-1", "motion"}, ordinaryPinnedModelIDs(t, first))
+	etag := first.Header().Get("ETag")
+	require.NotEmpty(t, etag)
+	require.Equal(t, http.StatusNotModified, requestModelForTest(h, group, "", etag).Code)
+	video := requestModelForTest(h, group, "motion", etag)
+	require.Equal(t, http.StatusOK, video.Code, video.Body.String())
+	require.Empty(t, video.Header().Get("ETag"))
+
+	group.AllowVideoGeneration = false
+	group.AllowImageGeneration = false
+	changed := requestModelForTest(h, group, "", etag)
+	require.Equal(t, http.StatusOK, changed.Code, changed.Body.String())
+	require.NotEqual(t, etag, changed.Header().Get("ETag"))
+	require.Equal(t, []string{"text-model"}, ordinaryPinnedModelIDs(t, changed))
+	require.Equal(t, http.StatusNotFound, requestModelForTest(h, group, "motion", "").Code)
+	require.Equal(t, http.StatusNotFound, requestModelForTest(h, group, "gpt-image-1", "").Code)
 }

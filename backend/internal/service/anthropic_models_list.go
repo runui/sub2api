@@ -1,22 +1,11 @@
 package service
 
 import (
-	"context"
 	"slices"
 	"strings"
 )
 
-func (s *GatewayService) ExpandAnthropicLongContextModels(ctx context.Context, group *Group, models []string) []string {
-	var accounts []Account
-	var err error
-	if group != nil {
-		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
-	} else {
-		accounts, err = s.accountRepo.ListSchedulable(ctx)
-	}
-	if err != nil {
-		return models
-	}
+func expandAnthropicLongContextModels(group *Group, models []string, accounts []Account) []string {
 	result := cloneStringSlice(models)
 	seen := make(map[string]bool, len(models))
 	for _, model := range models {

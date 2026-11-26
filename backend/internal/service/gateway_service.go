@@ -1632,6 +1632,14 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 		return CompositeModelOwnership{}, err
 	}
 
+	ownership := compositeModelOwnership(accounts, model)
+	if s.modelsListCache != nil {
+		s.modelsListCache.Set(cacheKey, ownership, s.modelsListCacheTTL)
+	}
+	return ownership, nil
+}
+
+func compositeModelOwnership(accounts []Account, model string) CompositeModelOwnership {
 	platforms := make(map[string]struct{})
 	ownership := CompositeModelOwnership{}
 	for _, account := range accounts {
@@ -1651,10 +1659,7 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 		ownership.Ambiguous = true
 	}
 
-	if s.modelsListCache != nil {
-		s.modelsListCache.Set(cacheKey, ownership, s.modelsListCacheTTL)
-	}
-	return ownership, nil
+	return ownership
 }
 
 func explicitModelMappingClaims(account Account, model string) bool {

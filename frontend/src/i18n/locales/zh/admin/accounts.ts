@@ -545,8 +545,8 @@ export default {
         }
       },
       usageWindow: {
-        falWorkspaceCost: 'fal 工作区 · 近 7 天预估费用',
-        falWorkspaceScope: 'fal 上游整个工作区的模型费用，不是剩余余额或单个 Key 的费用。',
+        falWorkspaceCost: '7 天费用',
+        falWorkspaceScope: 'fal 整个工作区近 7 天的模型预估费用，不是剩余余额或单个 Key 的费用。',
         falWorkspaceEmpty: '无计费用量',
         statsTitle: '5小时窗口用量统计',
         statsTitleDaily: '每日用量统计',

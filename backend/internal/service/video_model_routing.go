@@ -23,82 +23,33 @@ func (s *GatewayService) resolveVideoModelOwnership(ctx context.Context, groupID
 	return videoModelOwnership(accounts, model), nil
 }
 
-// ListVideoModels lists concrete public IDs backed by the group's video routing configuration.
-func (s *GatewayService) ListVideoModels(ctx context.Context, group *Group) ([]string, error) {
-	if group == nil || group.ID <= 0 || !group.AllowVideoGeneration {
-		return nil, nil
+// Resolve the winning video route before checking its target account. A route
+// with no usable target must not fall back to an unrelated account mapping.
+func videoModelRoutableForAccounts(group *Group, ownershipAccounts, eligibleAccounts []Account, routes []CompositeModelRoute, model string) bool {
+	platform, target := "", model
+	if route, ok := matchCompositeRoute(routes, model, CompositeRouteEndpointVideos); ok {
+		platform = route.TargetPlatform
+		target = firstNonEmpty(strings.TrimSpace(route.UpstreamModel), model)
+	} else if ownership := videoModelOwnership(ownershipAccounts, model); ownership.Matched {
+		platform = ownership.TargetPlatform
 	}
-	accounts, err := s.videoModelAccounts(ctx, group.ID)
-	if err != nil {
-		return nil, err
+	switch platform {
+	case PlatformGrok:
+		if group.Platform != PlatformGrok && group.Platform != PlatformComposite {
+			return false
+		}
+	case PlatformFal:
+		if group.IsSubscriptionType() {
+			return false
+		}
+	default:
+		return false
 	}
-	var routes []CompositeModelRoute
-	if s != nil && s.compositeResolver != nil && s.compositeResolver.repo != nil {
-		routes, err = s.compositeResolver.repo.ListByGroup(ctx, group.ID, false)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return listVideoModelIDs(group, accounts, routes), nil
-}
-
-func listVideoModelIDs(group *Group, accounts []Account, routes []CompositeModelRoute) []string {
-	candidates := make(map[string]struct{})
-	add := func(model string) {
-		if model = strings.TrimSpace(model); model != "" && !strings.Contains(model, "*") {
-			candidates[model] = struct{}{}
-		}
-	}
-	for _, account := range accounts {
-		for model := range account.GetModelMapping() {
-			add(model)
-		}
-	}
-	for _, route := range routes {
-		if normalizeCompositeRouteEndpoint(route.Endpoint) == CompositeRouteEndpointVideos &&
-			normalizeCompositeRouteMatchType(route.MatchType) == CompositeRouteMatchExact {
-			add(route.PublicModel)
-		}
-	}
-	if group.ModelAllowlistEnabled() {
-		// A concrete allowlist entry can make a wildcard mapping or prefix route enumerable.
-		for _, model := range group.ModelAllowlist.Models {
-			add(model)
-		}
-	}
-
-	models := make([]string, 0, len(candidates))
-	for _, model := range slices.Sorted(maps.Keys(candidates)) {
-		platform, target := "", model
-		if route, ok := matchCompositeRoute(routes, model, CompositeRouteEndpointVideos); ok {
-			platform = route.TargetPlatform
-			if upstream := strings.TrimSpace(route.UpstreamModel); upstream != "" {
-				target = upstream
-			}
-		} else if ownership := videoModelOwnership(accounts, model); ownership.Matched {
-			platform = ownership.TargetPlatform
-		}
-		switch platform {
-		case PlatformGrok:
-			if group.Platform != PlatformGrok && group.Platform != PlatformComposite {
-				continue
-			}
-		case PlatformFal:
-			if group.IsSubscriptionType() {
-				continue
-			}
-		default:
-			continue
-		}
-		matches := providerModelCapabilities["video.generate"][platform]
-		for _, account := range accounts {
-			if account.Platform == platform && matches(&account, target) {
-				models = append(models, model)
-				break
-			}
-		}
-	}
-	return group.ModelAllowlist.FilterForListing(models)
+	matches := providerModelCapabilities["video.generate"][platform]
+	return slices.ContainsFunc(eligibleAccounts, func(account Account) bool {
+		return account.Platform == platform && matches(&account, target) &&
+			(platform != PlatformGrok || account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityGrokVideoGeneration))
+	})
 }
 
 func videoModelOwnership(accounts []Account, model string) CompositeModelOwnership {

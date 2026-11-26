@@ -45,7 +45,7 @@ func TestOrdinaryPinnedModelsUsesSelectedAccountsAndFinalETag(t *testing.T) {
 		3: `{"data":[{"id":"special-model","owned_by":"second"},{"id":"text-embedding-3-large"}]}`,
 	}}
 	h := newPinnedCodexTestHandler(accounts, upstream, 3)
-	group := &service.Group{ID: 91, Platform: service.PlatformOpenAI,
+	group := &service.Group{ID: 91, Platform: service.PlatformOpenAI, AllowImageGeneration: true,
 		CodexModelsManifestConfig: service.GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{2, 3}}}
 	first := performOrdinaryPinnedModelsRequest(t, h, group, "/v1/models", "")
 	require.Equal(t, http.StatusOK, first.Code, first.Body.String())

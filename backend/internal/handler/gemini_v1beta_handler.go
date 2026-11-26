@@ -76,7 +76,8 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		return
 	}
 
-	// 分组内 Gemini 账号都声明了 model_mapping 时，列表与 /v1/models 同源（含白名单口径），不透传单个账号的上游列表。
+	// 分组内 Gemini 账号都声明了 model_mapping 时，使用 Gemini 协议自己的声明目录，
+	// 不透传单个账号的上游列表。通用 /v1/models 还单独组合分组路由和媒体能力。
 	if declared, err := h.geminiCompatService.DeclaredModelIDs(c.Request.Context(), apiKey.GroupID); err == nil && len(declared) > 0 {
 		ids := append([]string{}, declared...)
 		for _, id := range agModelIDs {
