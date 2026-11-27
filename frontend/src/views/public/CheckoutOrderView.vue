@@ -74,7 +74,7 @@ const canCancel = computed(() => !!order.value?.can_cancel && awaitingConfirmati
 const replayMethod = computed(() => status.value === 'PENDING' && !actionExpired.value ? order.value?.payment_type || quote.value?.payment_type : '')
 const paymentTotal = computed(() => {
   const { pay_amount: amount, currency } = order.value ?? {}
-  return amount == null || !currency ? '' : `${formatPaymentAmount(amount, currency, locale.value)} ${currency}`
+  return amount == null || !currency ? '' : `${formatPaymentAmount(amount, currency, locale.value)}\u00a0${currency}`
 })
 // Use only COMPLETED from the authorized projection, never provider or query data.
 const returnURL = computed(() => completed.value
@@ -416,7 +416,7 @@ function methodName(paymentType: string) {
 
 <template>
   <CheckoutShell :title="t(showStatusPage ? 'payment.checkout.resultTitle' : 'payment.checkout.title')">
-    <div role="status" class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+    <div role="status" class="space-y-2 pay-muted text-sm">
       <p v-if="statusIssue">{{ t(`payment.checkout.${statusIssue}`) }}</p>
       <p v-else-if="completed">{{ t('payment.checkout.completed') }}</p>
       <p v-else-if="status === 'CANCELLED'">{{ t('payment.checkout.orderCancelled') }}</p>
@@ -427,26 +427,26 @@ function methodName(paymentType: string) {
       <p v-else-if="!order && checking">{{ t('common.loading') }}</p>
     </div>
 
-    <dl v-if="order" class="space-y-3 rounded-xl bg-gray-50 p-4 text-sm dark:bg-dark-900">
-      <div class="flex justify-between gap-4">
-        <dt>{{ t('payment.orders.orderId') }}</dt><dd class="break-all text-right font-medium">#{{ order.order_id }}</dd>
+    <dl v-if="order" class="pay-inset space-y-3 p-4 text-sm">
+      <div class="pay-detail pay-detail--order-id">
+        <dt>{{ t('payment.orders.orderId') }}</dt><dd class="pay-order-id">#{{ order.order_id }}</dd>
       </div>
-      <div v-if="order.order_type === 'balance'" class="flex justify-between gap-4">
-        <dt>{{ t('payment.checkout.balanceAmount') }}</dt><dd class="font-medium">{{ formatPaymentAmount(order.amount, 'USD', locale) }} USD</dd>
+      <div v-if="order.order_type === 'balance'" class="pay-detail">
+        <dt>{{ t('payment.checkout.balanceAmount') }}</dt><dd class="pay-number font-medium">{{ formatPaymentAmount(order.amount, 'USD', locale) }}&nbsp;USD</dd>
       </div>
-      <div v-else-if="order?.plan_name || order?.plan_id" class="flex justify-between gap-4">
+      <div v-else-if="order?.plan_name || order?.plan_id" class="pay-detail">
         <dt>{{ t('payment.tabSubscribe') }}</dt><dd class="font-medium">{{ order.plan_name || (order.plan_id ? `#${order.plan_id}` : '') }}</dd>
       </div>
-      <div v-if="order?.order_type === 'subscription' && order.plan_currency && !paymentTotal" class="flex justify-between gap-4">
-        <dt>{{ t('payment.amountLabel') }}</dt><dd class="font-medium">{{ formatPaymentAmount(order.amount, order.plan_currency, locale) }} {{ order.plan_currency }}</dd>
+      <div v-if="order?.order_type === 'subscription' && order.plan_currency && !paymentTotal" class="pay-detail">
+        <dt>{{ t('payment.amountLabel') }}</dt><dd class="pay-number font-medium">{{ formatPaymentAmount(order.amount, order.plan_currency, locale) }}&nbsp;{{ order.plan_currency }}</dd>
       </div>
-      <div v-if="order?.payment_type" class="flex justify-between gap-4">
+      <div v-if="order?.payment_type" class="pay-detail">
         <dt>{{ t('payment.paymentMethod') }}</dt><dd class="font-medium">{{ methodName(order.payment_type) }}</dd>
       </div>
-      <div v-if="paymentTotal" class="flex justify-between gap-4">
-        <dt>{{ t('payment.checkout.paymentTotal') }}</dt><dd class="font-medium">{{ paymentTotal }}</dd>
+      <div v-if="paymentTotal" class="pay-amount pay-amount-row px-3 py-2">
+        <dt>{{ t('payment.checkout.paymentTotal') }}</dt><dd class="pay-number text-xl font-semibold">{{ paymentTotal }}</dd>
       </div>
-      <div v-if="status && status !== 'AWAITING_CONFIRMATION'" class="flex items-center justify-between gap-4">
+      <div v-if="status && status !== 'AWAITING_CONFIRMATION'" class="pay-detail">
         <dt>{{ t('payment.orders.status') }}</dt><dd><OrderStatusBadge :status="status" /></dd>
       </div>
     </dl>
@@ -457,87 +457,98 @@ function methodName(paymentType: string) {
 
     <div v-if="hasPaymentUI && paymentActive && !statusIssue" class="space-y-4 text-center">
       <p v-if="qrImage" class="text-sm">{{ t('payment.checkout.scanHint', { method: methodName(order?.payment_type || method) }) }}</p>
-      <img v-if="qrImage" :src="qrImage" :alt="t('payment.qr.scanToPay')" width="224" height="224" class="mx-auto rounded-lg">
-      <p v-if="qrImage && mobile && !payURL && !alipayLink" class="text-sm text-gray-600 dark:text-gray-300">{{ t('payment.checkout.mobileScanHint') }}</p>
-      <a v-if="hostedURL" :href="hostedURL" target="_blank" rel="noreferrer" class="btn btn-primary w-full" @click="showPaymentDialog = true">{{ t('payment.checkout.openProvider') }}</a>
-      <a v-if="alipayLink" :href="alipayLink" rel="noreferrer" class="btn btn-primary w-full">{{ t('payment.checkout.openProvider') }}</a>
+      <img v-if="qrImage" :src="qrImage" :alt="t('payment.qr.scanToPay')" width="224" height="224" class="pay-qr mx-auto">
+      <p v-if="qrImage && mobile && !payURL && !alipayLink" class="pay-muted text-sm">{{ t('payment.checkout.mobileScanHint') }}</p>
+      <a v-if="hostedURL" :href="hostedURL" target="_blank" rel="noreferrer" class="btn pay-button pay-button--primary w-full" @click="showPaymentDialog = true">{{ t('payment.checkout.openProvider') }}</a>
+      <a v-if="alipayLink" :href="alipayLink" rel="noreferrer" class="btn pay-button pay-button--primary w-full">{{ t('payment.checkout.openProvider') }}</a>
       <CheckoutStripeForm v-if="isStripe && stripeTab && !sdkSubmitted && paymentAction?.client_secret && paymentAction.publishable_key"
         :key="id" :client-secret="paymentAction.client_secret" :publishable-key="paymentAction.publishable_key"
         :return-url="stripeURL" @submitted="paymentSubmitted" />
-      <button v-if="isAirwallex && airwallexTab && order?.currency && paymentAction" type="button" class="btn btn-primary w-full" @click="launchAirwallex(paymentAction, order.currency)">{{ t('payment.checkout.openProvider') }}</button>
-      <button v-if="paymentAction?.jsapi && !sdkSubmitted" type="button" class="btn btn-primary w-full" :disabled="busy" @click="openWeChat">{{ t('payment.checkout.openProvider') }}</button>
+      <button v-if="isAirwallex && airwallexTab && order?.currency && paymentAction" type="button" class="btn pay-button pay-button--primary w-full" @click="launchAirwallex(paymentAction, order.currency)">{{ t('payment.checkout.openProvider') }}</button>
+      <button v-if="paymentAction?.jsapi && !sdkSubmitted" type="button" class="btn pay-button pay-button--primary w-full" :disabled="busy" @click="openWeChat">{{ t('payment.checkout.openProvider') }}</button>
     </div>
 
     <template v-else-if="awaitingConfirmation && paymentActive && !uncertain && !statusIssue">
       <fieldset v-if="methods.length" :disabled="busy" class="space-y-2">
         <legend class="mb-2 text-sm font-medium">{{ t('payment.paymentMethod') }}</legend>
-        <label v-for="key in methods" :key="key" class="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-dark-700">
+        <label v-for="key in methods" :key="key" class="pay-option flex items-center gap-3 p-3 text-sm" :class="{ 'pay-option--selected': method === key }">
           <input type="radio" name="checkout-method" :value="key" :checked="method === key" @change="selectMethod(key)">
-          {{ methodName(key) }}
+          <span class="pay-option-label">{{ methodName(key) }}</span>
         </label>
       </fieldset>
       <p v-else class="text-sm" role="status">{{ t('payment.checkout.noMethods') }}</p>
 
       <template v-if="quote">
-        <div class="flex items-baseline justify-between gap-4 border-t border-gray-100 pt-4 dark:border-dark-700">
+        <div class="pay-amount pay-amount-row p-4">
           <div>
             <p class="text-sm font-medium">{{ t('payment.checkout.paymentTotal') }}</p>
-            <p v-if="quote.fee_rate > 0" class="text-xs text-gray-600 dark:text-gray-300">{{ t('payment.checkout.feeIncluded', { rate: quote.fee_rate }) }}</p>
+            <p v-if="quote.fee_rate > 0" class="text-xs pay-muted">{{ t('payment.checkout.feeIncluded', { rate: quote.fee_rate }) }}</p>
           </div>
-          <strong class="text-lg">{{ formatPaymentAmount(quote.pay_amount, quote.currency, locale) }} {{ quote.currency }}</strong>
+          <strong class="pay-number text-xl font-semibold tracking-tight min-[360px]:text-2xl sm:text-[28px]">{{ formatPaymentAmount(quote.pay_amount, quote.currency, locale) }}&nbsp;{{ quote.currency }}</strong>
         </div>
-        <p v-if="order?.order_type === 'balance'" class="text-sm text-gray-600 dark:text-gray-300">
+        <p v-if="order?.order_type === 'balance'" class="pay-muted text-sm">
           {{ t('payment.creditedBalance') }}: {{ formatPaymentAmount(quote.amount, 'USD', locale) }} USD
         </p>
-        <button class="btn btn-primary w-full" :disabled="busy" @click="pay(quote.payment_type, quote.quote_id)">
+        <button class="btn pay-button pay-button--primary w-full" :disabled="busy" @click="pay(quote.payment_type, quote.quote_id)">
           {{ busy ? t('common.loading') : t('payment.checkout.pay') }}
         </button>
       </template>
-      <button v-else-if="method && methods.includes(method) && issue && issue !== 'planChanged'" class="btn btn-secondary w-full" :disabled="busy" @click="selectMethod(method)">
+      <div v-else-if="method && busy" class="space-y-5" aria-hidden="true">
+        <div class="pay-amount pay-amount-row p-4">
+          <div>
+            <p class="text-sm font-medium">{{ t('payment.checkout.paymentTotal') }}</p>
+            <p class="invisible text-xs">&nbsp;</p>
+          </div>
+          <span class="text-xl font-semibold min-[360px]:text-2xl sm:text-[28px]">—</span>
+        </div>
+        <div v-if="order?.order_type === 'balance'" class="h-5" />
+        <div class="pay-quote-placeholder-button" />
+      </div>
+      <button v-else-if="method && methods.includes(method) && issue && issue !== 'planChanged'" class="btn pay-button pay-button--secondary w-full" :disabled="busy" @click="selectMethod(method)">
         {{ t('payment.checkout.refreshQuote') }}
       </button>
     </template>
 
-    <button v-if="(replayMethod || (uncertain && awaitingConfirmation && quote)) && paymentActive && !hasPaymentUI && !statusIssue" class="btn btn-secondary w-full" :disabled="busy || retryCoolingDown" @click="resumePending">
+    <button v-if="(replayMethod || (uncertain && awaitingConfirmation && quote)) && paymentActive && !hasPaymentUI && !statusIssue" class="btn pay-button pay-button--secondary w-full" :disabled="busy || retryCoolingDown" @click="resumePending">
       {{ t('payment.checkout.retryPayment') }}
     </button>
-    <a v-if="returnURL" ref="returnLink" :href="returnURL" rel="noreferrer" class="btn btn-primary w-full">
+    <a v-if="returnURL" ref="returnLink" :href="returnURL" rel="noreferrer" class="btn pay-button pay-button--primary w-full">
       {{ t('payment.checkout.returnToApp') }}
     </a>
     <p v-if="cancelIssue && status !== 'CANCELLED'" role="status" class="text-sm text-amber-700 dark:text-amber-300">
       {{ t('payment.checkout.cancelFailed') }}
     </p>
-    <button v-if="canCancel && !statusIssue" type="button" class="btn btn-secondary w-full" :disabled="busy" @click="showCancelDialog = true">
+    <button v-if="canCancel && !statusIssue" type="button" class="btn pay-button pay-button--secondary w-full" :disabled="busy" @click="showCancelDialog = true">
       {{ t(cancelling ? 'common.loading' : 'payment.checkout.cancelOrder') }}
     </button>
-    <BaseDialog :show="showCancelDialog && canCancel" :title="t('payment.checkout.cancelOrder')" width="narrow" @close="showCancelDialog = false">
+    <BaseDialog :show="showCancelDialog && canCancel" :title="t('payment.checkout.cancelOrder')" width="narrow" panel-class="checkout-theme" @close="showCancelDialog = false">
       <p class="text-sm">{{ t('payment.checkout.cancelOrderHint') }}</p>
       <template #footer>
-        <button type="button" class="btn btn-secondary" @click="showCancelDialog = false">{{ t('common.back') }}</button>
-        <button type="button" class="btn btn-danger" @click="cancelOrder">{{ t('payment.checkout.confirmCancel') }}</button>
+        <button type="button" class="btn pay-button pay-button--secondary" @click="showCancelDialog = false">{{ t('common.back') }}</button>
+        <button type="button" class="btn pay-button pay-button--danger" @click="cancelOrder">{{ t('payment.checkout.confirmCancel') }}</button>
       </template>
     </BaseDialog>
     <p v-if="switchIssue" role="status" class="text-sm text-amber-700 dark:text-amber-300">
       {{ t(`payment.checkout.${switchIssue}`) }}
     </p>
-    <button v-if="canSwitchMethod && !statusIssue" type="button" class="btn btn-secondary w-full" :disabled="busy" @click="showSwitchDialog = true">
+    <button v-if="canSwitchMethod && !statusIssue" type="button" class="btn pay-button pay-button--secondary w-full" :disabled="busy" @click="showSwitchDialog = true">
       {{ t(switching ? 'payment.checkout.switchMethodWorking' : 'payment.checkout.switchMethod') }}
     </button>
-    <BaseDialog :show="showSwitchDialog && canSwitchMethod" :title="t('payment.checkout.switchMethod')" width="narrow" @close="showSwitchDialog = false">
+    <BaseDialog :show="showSwitchDialog && canSwitchMethod" :title="t('payment.checkout.switchMethod')" width="narrow" panel-class="checkout-theme" @close="showSwitchDialog = false">
       <p class="text-sm">{{ t('payment.checkout.switchMethodHint') }}</p>
       <template #footer>
-        <button type="button" class="btn btn-secondary" @click="showSwitchDialog = false">{{ t('common.cancel') }}</button>
-        <button type="button" class="btn btn-primary" @click="switchMethod">{{ t('payment.checkout.switchMethod') }}</button>
+        <button type="button" class="btn pay-button pay-button--secondary" @click="showSwitchDialog = false">{{ t('common.cancel') }}</button>
+        <button type="button" class="btn pay-button pay-button--primary" @click="switchMethod">{{ t('payment.checkout.switchMethod') }}</button>
       </template>
     </BaseDialog>
-    <BaseDialog :show="paymentDialogOpen" :title="t('payment.checkout.payingTitle')" width="narrow" @close="showPaymentDialog = false">
-      <div role="status" class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
-        <span aria-hidden="true" class="h-5 w-5 shrink-0 rounded-full border-2 border-primary-500 border-t-transparent motion-safe:animate-spin" />
+    <BaseDialog :show="paymentDialogOpen" :title="t('payment.checkout.payingTitle')" width="narrow" panel-class="checkout-theme" @close="showPaymentDialog = false">
+      <div role="status" class="flex items-center gap-3 pay-muted text-sm">
+        <span aria-hidden="true" class="pay-spinner h-5 w-5 shrink-0 rounded-full border-2 motion-safe:animate-spin" />
         <p v-if="statusIssue === 'statusUnavailable'">{{ t('payment.checkout.statusUnavailable') }}</p>
         <p v-else>{{ t('payment.checkout.payingHint') }}</p>
       </div>
       <template #footer>
-        <button type="button" class="btn btn-primary" @click="showPaymentDialog = false">
+        <button type="button" class="btn pay-button pay-button--primary" @click="showPaymentDialog = false">
           {{ t('payment.checkout.paymentDone') }}
         </button>
       </template>

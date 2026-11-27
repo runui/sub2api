@@ -27,8 +27,22 @@ onMounted(async () => {
     stripe = await loadStripe(props.publishableKey)
     if (disposed) return
     if (!stripe || !target.value) throw new Error()
-    elements = stripe.elements({ clientSecret: props.clientSecret,
-      appearance: { theme: document.documentElement.classList.contains('dark') ? 'night' : 'stripe' } })
+    const dark = document.documentElement.classList.contains('dark')
+    const accent = dark ? '#84b4ff' : '#0057ff'
+    elements = stripe.elements({
+      clientSecret: props.clientSecret,
+      appearance: {
+        theme: dark ? 'night' : 'stripe',
+        variables: {
+          colorPrimary: accent,
+          colorBackground: dark ? '#1c2534' : '#ffffff',
+          colorText: dark ? '#f5f7fb' : '#171717',
+          colorDanger: dark ? '#fca5a5' : '#b91c1c',
+          borderRadius: '12px',
+          focusBoxShadow: `0 0 0 2px ${accent}`,
+        },
+      },
+    })
     field = elements.create('payment', { layout: 'tabs' })
     field.on('ready', () => { ready.value = true })
     field.on('change', event => { method = event.value.type })
@@ -63,8 +77,8 @@ async function confirm() {
 <template>
   <form class="space-y-3 text-left" @submit.prevent="confirm">
     <div ref="target" />
-    <p v-if="issue" role="alert" class="text-sm text-red-600">{{ issue }}</p>
+    <p v-if="issue" role="alert" class="text-sm text-red-700 dark:text-red-300">{{ issue }}</p>
     <p v-else-if="!ready" role="status" class="text-sm">{{ t('common.loading') }}</p>
-    <button type="submit" class="btn btn-primary w-full" :disabled="!ready || busy">{{ t('payment.stripePay') }}</button>
+    <button type="submit" class="btn pay-button pay-button--primary w-full" :disabled="!ready || busy">{{ t('payment.stripePay') }}</button>
   </form>
 </template>

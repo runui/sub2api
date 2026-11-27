@@ -1,0 +1,245 @@
+/* The checkout and its teleported dialogs share this theme. */
+.checkout-theme {
+  --pay-background: #f5f5f5;
+  --pay-surface: #fff;
+  --pay-inset: #fafafa;
+  --pay-border: #e5e5e5;
+  --pay-text: #171717;
+  --pay-muted: #525252;
+  --pay-accent: #0057ff;
+  --pay-focus: #0057ff;
+  --pay-accent-hover: #0048d6;
+  --pay-accent-border: #cce1ff;
+  --pay-tint: #ebf3ff;
+  --pay-dialog-shadow: 0 12px 32px rgb(0 0 0 / 16%);
+  --pay-radius-panel: 24px;
+  --pay-radius-inset: 16px;
+  --pay-radius-option: 12px;
+  --pay-radius-button: 10px;
+  color: var(--pay-text);
+}
+
+@media (min-width: 640px) {
+  .checkout-theme {
+    --pay-radius-panel: 30px;
+    --pay-radius-inset: 20px;
+    --pay-radius-button: 12px;
+  }
+}
+
+.dark .checkout-theme {
+  --pay-background: #111827;
+  --pay-surface: #1c2534;
+  --pay-inset: #151e2c;
+  --pay-border: #374459;
+  --pay-text: #f5f7fb;
+  --pay-muted: #b6c1d1;
+  --pay-focus: #84b4ff;
+  --pay-accent-hover: #1d68f5;
+  --pay-accent-border: #375685;
+  --pay-tint: #1a304e;
+  --pay-dialog-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+}
+
+.checkout-theme.checkout-theme--background {
+  background-color: var(--pay-background);
+}
+
+.checkout-theme .pay-card,
+.checkout-theme.modal-content {
+  border: 1px solid var(--pay-border);
+  border-radius: var(--pay-radius-panel);
+  background-color: var(--pay-surface);
+}
+
+.checkout-theme.modal-content {
+  box-shadow: var(--pay-dialog-shadow);
+}
+
+.checkout-theme .pay-inset,
+.checkout-theme .pay-amount {
+  border: 1px solid var(--pay-border);
+  border-radius: var(--pay-radius-inset);
+  background-color: var(--pay-inset);
+}
+
+.checkout-theme .pay-amount {
+  border-color: var(--pay-accent-border);
+  background-color: var(--pay-tint);
+}
+
+.checkout-theme .pay-inset .pay-amount {
+  border-radius: var(--pay-radius-option);
+}
+
+.checkout-theme .pay-number {
+  font-variant-numeric: tabular-nums;
+}
+
+.checkout-theme :is(h1, h3, p, .pay-option-label, .pay-detail > dd, .pay-amount-row > *) {
+  overflow-wrap: break-word;
+}
+
+.checkout-theme .pay-detail {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.checkout-theme .pay-detail > dt {
+  flex-shrink: 0;
+  max-width: 45%;
+  color: var(--pay-muted);
+  overflow-wrap: break-word;
+}
+
+.checkout-theme .pay-detail > dd {
+  min-width: 0;
+  text-align: end;
+}
+
+.checkout-theme .pay-detail--order-id {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  row-gap: 0.25rem;
+}
+
+.checkout-theme .pay-detail--order-id > dd {
+  max-width: 100%;
+  text-align: start;
+}
+
+.checkout-theme .pay-order-id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 359px) {
+  .checkout-theme .pay-order-id {
+    font-size: 0.625rem;
+  }
+}
+
+.checkout-theme .pay-amount-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.checkout-theme .pay-amount-row > * {
+  max-width: 100%;
+}
+
+.checkout-theme .pay-option-label {
+  min-width: 0;
+  text-wrap: pretty;
+}
+
+.checkout-theme .pay-muted {
+  color: var(--pay-muted);
+}
+
+.checkout-theme .pay-accent {
+  color: var(--pay-focus);
+}
+
+.checkout-theme .pay-rule,
+.checkout-theme .modal-header,
+.checkout-theme .modal-footer {
+  border-color: var(--pay-border);
+}
+
+.checkout-theme .pay-option {
+  border: 1px solid var(--pay-border);
+  border-radius: var(--pay-radius-option);
+  background-color: var(--pay-surface);
+}
+
+.checkout-theme .pay-option input {
+  accent-color: var(--pay-accent);
+  flex-shrink: 0;
+}
+
+.checkout-theme fieldset:not(:disabled) .pay-option {
+  cursor: pointer;
+}
+
+.checkout-theme fieldset:not(:disabled) .pay-option:hover {
+  border-color: var(--pay-focus);
+}
+
+.checkout-theme .pay-option--selected {
+  border-color: var(--pay-focus);
+  background-color: var(--pay-tint);
+  box-shadow: inset 0 0 0 1px var(--pay-focus);
+}
+
+.checkout-theme fieldset:disabled .pay-option {
+  cursor: wait;
+}
+
+.checkout-theme .pay-quote-placeholder-button {
+  height: 2.5rem;
+  border-radius: var(--pay-radius-button);
+  background-color: var(--pay-inset);
+}
+
+.checkout-theme .pay-qr {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--pay-border);
+  border-radius: var(--pay-radius-option);
+  background-color: #fff;
+}
+
+.checkout-theme .pay-spinner {
+  border-color: var(--pay-focus);
+  border-top-color: transparent;
+}
+
+.checkout-theme .pay-button {
+  min-width: 0;
+  border-radius: var(--pay-radius-button);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.checkout-theme .pay-button--primary {
+  background-color: var(--pay-accent);
+  color: #fff;
+}
+
+.checkout-theme .pay-button--primary:hover:not(:disabled) {
+  background-color: var(--pay-accent-hover);
+}
+
+.checkout-theme .pay-button--secondary {
+  border: 1px solid var(--pay-border);
+  background-color: var(--pay-surface);
+  color: var(--pay-text);
+}
+
+.checkout-theme .pay-button--secondary:hover:not(:disabled) {
+  border-color: var(--pay-focus);
+  background-color: var(--pay-inset);
+}
+
+.checkout-theme .pay-button--danger {
+  background-color: #b91c1c;
+  color: #fff;
+}
+
+.checkout-theme .pay-button--danger:hover:not(:disabled) {
+  background-color: #991b1b;
+}
+
+.checkout-theme .pay-option:has(:focus-visible),
+.checkout-theme :is(.pay-button, .modal-header button):focus-visible {
+  outline: 2px solid var(--pay-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
